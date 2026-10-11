@@ -1,0 +1,37 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+    <!-- Story chapter pin on the world map (behaviour in Map.lua): Chronicle's own emblem, the quill in a gold ring -->
+    <Button name="ChronicleMapPinTemplate" virtual="true" mixin="ChronicleMapPinMixin">
+        <Size x="20" y="20"/>
+        <Layers>
+            <Layer level="ARTWORK">
+                <Texture parentKey="Icon" file="Interface\AddOns\ForeverChronicle\Media\pin" setAllPoints="true"/>
+            </Layer>
+        </Layers>
+        <!-- No scripts here: the map canvas wires OnMouseEnter/OnMouseLeave/OnClick/OnLoad from the mixin. -->
+    </Button>
+    <!-- Story map: where a chapter you have started continues (the next quest giver), the emblem with a soft glow -->
+    <Button name="ChronicleNextPinTemplate" virtual="true" mixin="ChronicleNextPinMixin">
+        <Size x="22" y="22"/>
+        <Layers>
+            <Layer level="BACKGROUND">
+                <Texture parentKey="Glow" file="Interface\Cooldown\star4" alphaMode="ADD">
+                    <Size x="46" y="46"/>
+                    <Anchors><Anchor point="CENTER"/></Anchors>
+                    <Color r="1" g="0.82" b="0.3" a="0.8"/>
+                </Texture>
+            </Layer>
+            <Layer level="ARTWORK">
+                <Texture parentKey="Icon" file="Interface\AddOns\ForeverChronicle\Media\pin" setAllPoints="true"/>
+            </Layer>
+        </Layers>
+    </Button>
+    <!-- Optional quest marker: "!" at a quest giver with quests for you, "?" where a finished quest is handed in -->
+    <Button name="ChronicleQuestPinTemplate" virtual="true" mixin="ChronicleQuestPinMixin">
+        <Size x="16" y="16"/>
+        <Layers>
+            <Layer level="ARTWORK">
+                <Texture parentKey="Icon" file="Interface\GossipFrame\AvailableQuestIcon" setAllPoints="true"/>
+            </Layer>
+        </Layers>
+    </Button>
+</Ui>

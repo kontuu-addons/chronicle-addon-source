@@ -1,0 +1,11 @@
+<Bindings>
+	<Binding name="CHRONICLE_PLAYSTOP" header="CHRONICLE" category="ADDONS">
+		ChronicleBinding_PlayStop()
+	</Binding>
+	<Binding name="CHRONICLE_SKIP" category="ADDONS">
+		ChronicleBinding_Skip()
+	</Binding>
+	<Binding name="CHRONICLE_JOURNAL" category="ADDONS">
+		ChronicleBinding_Journal()
+	</Binding>
+</Bindings>

@@ -1,0 +1,51 @@
+## Interface: 16001
+## Title: Chronicle
+## Notes: Story journal, lore recaps and voiced quest dialog for WoW: Forever. /lore
+## Notes-frFR: Journal d'aventure, résumés de l'histoire et dialogues de quêtes doublés pour WoW: Forever. /lore
+## Notes-esES: Diario de aventuras, resúmenes de la historia y diálogos de misiones con voz para WoW: Forever. /lore
+## Notes-esMX: Diario de aventuras, resúmenes de la historia y diálogos de misiones con voz para WoW: Forever. /lore
+## Notes-deDE: Abenteuertagebuch, Zusammenfassungen der Geschichte und vertonte Questdialoge für WoW: Forever. /lore
+## Author: Kontuu
+## Version: 0.4.0
+## IconTexture: Interface\AddOns\ForeverChronicle\Media\icon
+## SavedVariables: ChronicleDB
+## SavedVariablesPerCharacter: ChronicleCharDB
+## AddonCompartmentFunc: Chronicle_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: Chronicle_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: Chronicle_OnAddonCompartmentLeave
+## X-Curse-Project-ID: 1719434
+## OptionalDeps: DialogueUI, Immersion
+
+# Voiceover ships in three packs (ForeverChronicle_Kalimdor, _EasternKingdoms, _Adventures) that register through LibStub.
+# Data\Lore.lua is generated (story arcs and recaps).
+Libs\LibStub\LibStub.lua
+Locale.lua
+Locales\frFR.lua
+Locales\deDE.lua
+Locales\esES.lua
+Data\Lore.lua
+Data\Greetings.lua
+Core.lua
+Voice.lua
+TalkingHead.lua
+Capture.lua
+Books.lua
+Speech.lua
+Journal.lua
+Share.lua
+Sync.lua
+Scan.lua
+Options.lua
+Minimap.lua
+Reminder.lua
+Travel.lua
+Milestones.lua
+DialogueUI.lua
+Immersion.lua
+API.lua
+Endings.lua
+Holiday.lua
+Campfire.lua
+Map.lua
+StoryLog.lua
+MapPin.xml
