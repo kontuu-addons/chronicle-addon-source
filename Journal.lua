@@ -1464,7 +1464,7 @@ local function renderDungeon(d)
     header.title:SetText(ns.zoneLocal(d.name))
     local sub = levels(d)
     if d.cleared then
-        local when = (L["Cleared %s"]):format(date("%d %b %Y", d.cleared))
+        local when = (L["Cleared %s"]):format(ns.Date(d.cleared))
         sub = sub ~= "" and (sub .. "  ·  " .. when) or when
     end
     header.sub:SetText(sub)
@@ -2046,7 +2046,7 @@ local function renderChronicle()
         if not ch.locked and ch.done > 0 and ch.done >= (ch.total or #ch.entries) then chaptersDone = chaptersDone + 1 end
     end
     local bits = { ("%s %s, " .. L["level %d"]):format(UnitRace("player") or "", UnitClass("player") or "", UnitLevel("player") or 1) }
-    if began then bits[#bits + 1] = (L["since %s"]):format(date("%d %b %Y", began)) end
+    if began then bits[#bits + 1] = (L["since %s"]):format(ns.Date(began)) end
     header.sub:SetText(table.concat(bits, "  ·  "))
     local epi = ns.char.epilogues or {}
     local finished = 0
@@ -2138,7 +2138,7 @@ local function renderChronicle()
             if folded and folded[s.zone] ~= nil then open = not folded[s.zone] else open = zi == #zones end
             local from = (L["%d quests"]):format(s.n)
             if not open and #mine > 0 then from = from .. "  ·  " .. (L["%d of %d chapters"]):format(finishedHere, #mine) end
-            if epi[s.zone] then from = from .. "  ·  " .. (L["story done %s"]):format(date("%d %b %Y", epi[s.zone])) end
+            if epi[s.zone] then from = from .. "  ·  " .. (L["story done %s"]):format(ns.Date(epi[s.zone])) end
             local z = chronGet("zone", makeZone)
             z:SetPoint("TOPLEFT", page, "TOPLEFT", 30, y); z:SetWidth(width - 30)
             z.zone, z.open = s.zone, open
@@ -2190,7 +2190,7 @@ local function renderChronicle()
     local items = {}
     for _, c in ipairs(cleared) do
         local name = c.wing:gsub("^([^:]+)", function(d) return ns.zoneLocal(d) end)
-        items[#items + 1] = { text = name, tip = (L["Cleared %s"]):format(date("%d %b %Y", c.t)) }
+        items[#items + 1] = { text = name, tip = (L["Cleared %s"]):format(ns.Date(c.t)) }
     end
     badges(L["Dungeons & Raids"], items)
     items = {}
