@@ -380,13 +380,16 @@ function V.Test()
     return V.Play(key)
 end
 
--- Play one line. Returns false when there is no recording for it.
+-- Play one line now. Returns false when there is no recording for it. Lines waiting their turn keep waiting and
+-- follow it (a Listen click used to throw them away); only Stop empties the queue.
 function V.Play(key, by)
     local entry = V.Get(key)
     if not entry then return false end
-    queue = nil
+    for i = #(queue or {}), 1, -1 do if queue[i] == key then table.remove(queue, i) end end -- not twice
     owner = by
-    return start(entry, key)
+    if start(entry, key) then return true end
+    playNext() -- it did not play and start() had already stopped the old line: the lines waiting go on
+    return false
 end
 
 -- Play after whatever is talking now (or right away if nothing is).
