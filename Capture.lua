@@ -388,6 +388,11 @@ local function dropTwins()
 end
 
 local noTitle
+local function isNoTitle(id)
+    local n = noTitle[id]
+    return n == true or (type(n) == "number" and n >= 3)
+end
+
 local function scanCompleted()
     -- beta.14: older versions also dropped parts of a chain that share a title; forget those once so they come back
     if not ns.char.twinsV2 then ns.char.twins, ns.char.twinsV2 = nil, true end
@@ -405,7 +410,7 @@ local function scanCompleted()
     table.sort(ids)
     for _, id in ipairs(ids) do
         -- hidden tracking flags have no title: remembered account-wide so they are asked for only once
-        if not ns.char.done[id] and not noTitle[id] and not (ns.char.twins or {})[id] and not foreignQuests()[id]
+        if not ns.char.done[id] and not isNoTitle(id) and not (ns.char.twins or {})[id] and not foreignQuests()[id]
             and C_QuestLog.IsQuestFlaggedCompleted(id) then
             if not addHistory(id) and C_QuestLog.RequestLoadQuestByID then
                 pendingTitles[id] = true
@@ -455,7 +460,9 @@ ev:SetScript("OnEvent", function(_, event, ...)
                 if refreshTimer then refreshTimer:Cancel() end
                 refreshTimer = C_Timer.NewTimer(0.5, function() dropTwins(); refreshJournal() end) -- these arrive in bursts
             elseif ns.db.noTitle then
-                ns.db.noTitle[id] = true
+                -- a failed request may be a timeout: asked again at the next logins, given up after three; no title: at once
+                local n = noTitle[id]
+                noTitle[id] = ok and true or ((type(n) == "number" and n or 0) + 1)
             end
         end
     elseif event == "QUEST_REMOVED" then
