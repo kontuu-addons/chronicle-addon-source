@@ -554,13 +554,16 @@ function onGreeting(npcID, key, text, female)
     -- a greeting never cuts anyone off: it waits for whoever is talking. Only the newest greeting waits.
     local now = V.PlayingKey()
     if now == key then return end
-    ns.char.greeted[key] = time()
     if text then V.SetText(key, text) end
-    if not now then V.Play(key) return end
+    -- the cooldown starts once the greeting really plays or waits in line, not when it only tried
+    if not now then
+        if V.Play(key) then ns.char.greeted[key] = time() end
+        return
+    end
     if queue then
         for i = #queue, 1, -1 do if isGreeting(queue[i]) then table.remove(queue, i) end end
     end
-    V.Enqueue(key)
+    if V.Enqueue(key) then ns.char.greeted[key] = time() end
 end
 
 -- Called by Capture when a quest dialog page opens. If someone is still talking, the line waits its turn.
