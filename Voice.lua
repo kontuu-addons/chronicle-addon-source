@@ -284,7 +284,6 @@ local function start(entry, key)
     stopSound()
     playingKey = key
     startedTime = GetTime()
-    if ns.char and ns.char.heard and key and (key:match("^q%d") or key:sub(1, 4) == "book") then ns.char.heard[key] = true end
     holdBackground()
     holdDuck()
     local willPlay, h = PlaySoundFile("Interface\\AddOns\\" .. entry.p .. "\\Audio\\" .. entry.f, (V.Channel()))
@@ -305,6 +304,8 @@ local function start(entry, key)
         return false
     end
     handle = h
+    -- heard once it really plays: a file that failed would otherwise be skipped as "already heard" from then on
+    if ns.char and ns.char.heard and key and (key:match("^q%d") or key:sub(1, 4) == "book") then ns.char.heard[key] = true end
     lastKey = key or lastKey -- only a line that really plays: Replay, Play/Stop and /lore report use it
     ns.db.playing = h -- a /reload keeps the sound going; the next login stops it
     showBar(entry, key)
