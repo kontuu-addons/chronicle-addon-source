@@ -64,9 +64,15 @@ local function onPage()
     elseif current and ns.settings.books and ns.Voice.Get(current) then
         local heard = ns.char.heard
         if not (ns.settings.skipHeard and heard[current]) then
-            heard[current] = true
             ns.Voice.SetText(current, text)
-            ns.Voice.Play(current)
+            -- turning the page replaces the page being read; anything else that is talking (a quest giver, a recap)
+            -- is not cut off: the page waits its turn. It counts as heard once it starts (Voice.lua).
+            local playing = ns.Voice.PlayingKey()
+            if playing and playing ~= current and playing:sub(1, 4) ~= "book" then
+                ns.Voice.Enqueue(current)
+            else
+                ns.Voice.Play(current)
+            end
         end
     end
     update()
