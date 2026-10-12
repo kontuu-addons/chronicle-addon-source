@@ -22,6 +22,7 @@ function S.Key(speaker, text)
 end
 
 local function record(speaker, text)
+    if not ns.english then return end -- other languages can't be voiced, and Share never sends them: don't fill the saved data
     ns.db.speech = ns.db.speech or {}
     if not ns.db.speech[speaker] then
         local n = 0
