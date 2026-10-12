@@ -40,6 +40,7 @@ function V.IsPlaying() return handle ~= nil end
 
 -- The button that started what is playing, so only that one turns into Stop.
 local owner
+local ownedBy = {} -- [key] = the button that queued it (PlayQueue); lines queued by the game have none
 function V.Owner() return handle and owner or nil end
 
 -- Subtitles: the text of a line, for the talking head. Recaps and chapter intros come from the lore data,
@@ -269,7 +270,7 @@ function V.Speak(text, female)
 end
 
 function V.Stop()
-    queue, paused = nil, nil
+    queue, paused, ownedBy = nil, nil, {}
     stopSound()
 end
 
@@ -321,6 +322,7 @@ playNext = function()
     while queue and #queue > 0 do
         local key = table.remove(queue, 1)
         local entry = V.Get(key)
+        owner, ownedBy[key] = ownedBy[key], nil -- each line its own owner: a chapter's button, or none for the game's
         if entry and start(entry, key) then return end
     end
     queue = nil
@@ -411,6 +413,7 @@ function V.Enqueue(key)
     if handle then
         queue = queue or {}
         queue[#queue + 1] = key
+        ownedBy[key] = nil
         return true
     end
     return V.Play(key)
@@ -450,8 +453,8 @@ end
 function V.PlayQueue(keys, by)
     stopSound()
     owner = by
-    queue = {}
-    for _, k in ipairs(keys) do if V.Get(k) then queue[#queue + 1] = k end end
+    queue, ownedBy = {}, {}
+    for _, k in ipairs(keys) do if V.Get(k) then queue[#queue + 1] = k; ownedBy[k] = by end end
     if #queue == 0 then queue = nil; return false end
     playNext()
     return true
