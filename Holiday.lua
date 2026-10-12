@@ -20,11 +20,12 @@ local function scan()
     if canaccessvalue and not canaccessvalue(year) then return end
     if canaccessvalue and not canaccessvalue(today) then return end
     local titles = {}
+    local moved = false
     pcall(function()
         -- move the calendar only when it shows another month: moving it fires the calendar's update event again
         local shown = C_Calendar.GetMonthInfo and C_Calendar.GetMonthInfo(0)
         local here = shown and readable(shown.month) and readable(shown.year) and shown.month == month and shown.year == year
-        if not here and C_Calendar.SetAbsMonth then C_Calendar.SetAbsMonth(month, year) end
+        if not here and C_Calendar.SetAbsMonth then C_Calendar.SetAbsMonth(month, year); moved = true end
         for i = 1, C_Calendar.GetNumDayEvents(0, today) do
             local e = C_Calendar.GetDayEvent(0, today, i)
             local kind, title = e and e.calendarType, e and e.title
@@ -33,6 +34,7 @@ local function scan()
             if kind == "HOLIDAY" and type(title) == "string" then titles[#titles + 1] = title end
         end
     end)
+    if moved then return nil end -- the new month's events are not loaded yet: read them when the game says so
     on = {}
     for _, a in ipairs((ns.Lore and ns.Lore.arcs) or {}) do
         for _, t in ipairs(titles) do
@@ -88,7 +90,13 @@ ev:SetScript("OnEvent", function(self)
     local ok, now = pcall(scan)
     busy = false
     if not ok then return end
-    if not now then return end -- the calendar is open on another month, or not ready: wait for the next update
+    if not now then
+        -- the calendar is open on another month, or not ready: the move to this month fires the event again, and if
+        -- that was swallowed above (busy), look once more a little later
+        self.tries = (self.tries or 0) + 1
+        if self.tries <= 5 then C_Timer.After(2, function() self:GetScript("OnEvent")(self) end) end
+        return
+    end
     self:UnregisterAllEvents() -- once: reading the month fires this event again
     local first = not loaded
     loaded = true
