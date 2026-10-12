@@ -252,6 +252,7 @@ end
 
 function V.Speak(text, female)
     if ns.settings.journalOnly or not (text and text ~= "" and C_VoiceChat and C_VoiceChat.SpeakText) then return false end
+    if handle then return false end -- a real recording is playing: the stand-in voice never talks over it or empties the queue
     local id = ttsVoiceID(female)
     if not id then return false end
     stopSound()
@@ -536,9 +537,8 @@ function onGreeting(npcID, key, text, female)
         if ns.settings.ttsFallback and text then
             local k = "tts:gos:" .. tostring(npcID)
             local last = ns.char.greeted[k]
-            if not last or time() - last >= (ns.settings.greetCooldown or 10) * 60 then
-                ns.char.greeted[k] = time()
-                V.Speak(text, female)
+            if (not last or time() - last >= (ns.settings.greetCooldown or 10) * 60) and V.Speak(text, female) then
+                ns.char.greeted[k] = time() -- only once it really spoke, else it would be skipped for the cooldown
             end
         end
         return
@@ -663,9 +663,8 @@ function onQuestPage(questID, kind, text, female)
         end
     elseif ns.settings.voice and ns.settings.ttsFallback and text then
         local heard = ns.char.heard
-        if not (ns.settings.skipHeard and heard["tts:" .. key]) then
+        if not (ns.settings.skipHeard and heard["tts:" .. key]) and V.Speak(text, female) then
             heard["tts:" .. key] = true
-            V.Speak(text, female)
         end
     end
     if not entry and not silenced and ns.PackHint then ns.PackHint(questID) end
