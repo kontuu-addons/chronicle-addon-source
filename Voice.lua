@@ -282,7 +282,6 @@ local function start(entry, key)
     paused = nil -- something new is talking: the paused line is let go
     stopSound()
     playingKey = key
-    lastKey = key or lastKey
     startedTime = GetTime()
     if ns.char and ns.char.heard and key and (key:match("^q%d") or key:sub(1, 4) == "book") then ns.char.heard[key] = true end
     holdBackground()
@@ -305,6 +304,7 @@ local function start(entry, key)
         return false
     end
     handle = h
+    lastKey = key or lastKey -- only a line that really plays: Replay, Play/Stop and /lore report use it
     ns.db.playing = h -- a /reload keeps the sound going; the next login stops it
     showBar(entry, key)
     timer = C_Timer.NewTimer((entry.d or 5) + 0.35, function()
@@ -458,7 +458,7 @@ function V.PlayQueue(keys, by)
 end
 
 function V.PlayingKey() return handle and playingKey or nil end
-function V.LastKey() return playingKey end
+function V.LastKey() return lastKey end
 
 -- ---------------------------------------------------------------- greetings
 -- Which voiced greeting is on screen: each variant ships a short phrase (Data\Lore.lua "greet") that is
