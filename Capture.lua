@@ -138,7 +138,8 @@ local function onDetail()
     setText(q, "detail", GetQuestText())
     setText(q, "objectives", GetObjectiveText())
     q.giver = npcInfo() or q.giver
-    q.zone, q.subzone, q.map = where()
+    local zone, sub, map = where()
+    if zone then q.zone, q.subzone, q.map = zone, sub, map or q.map end -- no zone (loading screen, instance): keep what was recorded
     pcall(recordOffer, id, q.title, nil, q.giver)
     ns.Voice.OnQuestPage(id, "detail", q.detail, q.giver and q.giver.sex == 3)
 end
