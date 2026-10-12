@@ -396,11 +396,14 @@ function V.PlayingFor() return handle and (GetTime() - startedTime) or nil end
 -- is this line already waiting its turn?
 function V.Waiting(key)
     for _, k in ipairs(queue or {}) do if k == key then return true end end
+    for _, k in ipairs(paused and paused.keys or {}) do if k == key then return true end end -- kept by a pause
     return false
 end
 
 function V.Enqueue(key)
     if not V.Get(key) then return false end
+    -- already playing or already waiting (a turn-in event twice, a page opened again): once is enough
+    if (handle and playingKey == key) or V.Waiting(key) then return true end
     if paused then -- a recap after a turn-in, a book: after the paused lines
         paused.keys[#paused.keys + 1] = key
         return true
