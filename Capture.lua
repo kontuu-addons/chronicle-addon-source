@@ -410,6 +410,18 @@ ev:SetScript("OnEvent", function(_, event, ...)
                 ns.db.noTitle[id] = true
             end
         end
+    elseif event == "QUEST_REMOVED" then
+        -- also fires for a hand-in: wait, then only an abandoned quest (not done, not flagged) leaves the active list
+        local id = ...
+        if type(id) == "number" and ns.char.active[id] then
+            C_Timer.After(1, function()
+                if ns.char.done[id] then return end
+                local ok, flagged = pcall(C_QuestLog.IsQuestFlaggedCompleted, id)
+                if ok and flagged then return end
+                ns.char.active[id] = nil
+                refreshJournal()
+            end)
+        end
     elseif event == "QUEST_TURNED_IN" then
         local id = ...
         if type(id) == "number" and id > 0 then
@@ -421,7 +433,7 @@ ev:SetScript("OnEvent", function(_, event, ...)
     end
 end)
 
-for _, e in ipairs({ "GOSSIP_SHOW", "QUEST_GREETING", "QUEST_DETAIL","QUEST_PROGRESS", "QUEST_COMPLETE", "QUEST_FINISHED", "QUEST_ACCEPTED", "QUEST_TURNED_IN", "QUEST_DATA_LOAD_RESULT" }) do
+for _, e in ipairs({ "GOSSIP_SHOW", "QUEST_GREETING", "QUEST_DETAIL","QUEST_PROGRESS", "QUEST_COMPLETE", "QUEST_FINISHED", "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN", "QUEST_DATA_LOAD_RESULT" }) do
     pcall(ev.RegisterEvent, ev, e)
 end
 

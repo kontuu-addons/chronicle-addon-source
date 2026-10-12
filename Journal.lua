@@ -171,7 +171,7 @@ local built = {}
 local function signature(withLocked)
     local c = ns.char
     local active = 0
-    for _ in pairs(c.active) do active = active + 1 end
+    for id in pairs(c.active) do active = active + id end -- the ids, not a count: swapping one quest for another changes it
     local profs = {}
     for id in pairs(myProfessions()) do profs[#profs + 1] = id end
     table.sort(profs)
