@@ -169,7 +169,6 @@ end
 Y.Merge = merge
 
 -- ---------------------------------------------------------------- sending
-local lastSent = {}
 local sending = false
 
 local function sendResult(ok)
@@ -194,10 +193,14 @@ local function send()
     if sending or not homeParty() or not ns.english then return end
     if not (ns.settings.partySync and ns.Share) then return end
     local who = partyKey()
-    if lastSent[who] and time() - lastSent[who] < RESEND_AFTER then return end
+    -- kept in the saved data: a /reload or a new login must not send the same recordings to the same party again
+    local sent = ns.db.syncSent or {}
+    ns.db.syncSent = sent
+    for k, t in pairs(sent) do if time() - t >= RESEND_AFTER then sent[k] = nil end end
+    if sent[who] then return end
     local text, n = ns.Share.Build({ sync = true, maxBytes = CHUNK * MAX_CHUNKS })
     if n == 0 then return end
-    lastSent[who] = time()
+    sent[who] = time()
 
     local body = text:gsub("^CHRONICLE%-SHARE%-1\n", "")
     local id = tostring(math.random(100000, 999999))
