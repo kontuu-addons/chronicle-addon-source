@@ -736,8 +736,14 @@ function V.UpdateQuestButton()
     end
 end
 
-table.insert(ns.onLogin, function()
-    if ns.db.playing then StopSound(ns.db.playing, 400); ns.db.playing = nil end
+-- The saved handle is for a /reload, where the line keeps playing and is stopped here. After a real login (or a crash)
+-- the same number belongs to some other sound, which must not be stopped.
+local entering = CreateFrame("Frame")
+entering:RegisterEvent("PLAYER_ENTERING_WORLD")
+entering:SetScript("OnEvent", function(self, _, isInitialLogin)
+    self:UnregisterAllEvents()
+    if ns.db.playing and not isInitialLogin then StopSound(ns.db.playing, 400) end
+    ns.db.playing = nil
 end)
 
 table.insert(ns.onLogin, function()
