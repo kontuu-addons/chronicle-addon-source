@@ -46,6 +46,10 @@ local function onPage()
         ns.pr(("debug: book %q page %d -> %s"):format(title, page, current and (ns.Voice.Get(current) and current or current .. " (not voiced yet)") or "no match"))
     end
     local known = ns.Lore and ns.Lore.books and ns.Lore.books[title]
+    if known and ns.char then -- the journal's Library: the books, letters and plaques this character has read
+        ns.char.library = ns.char.library or {}
+        ns.char.library[title] = ns.char.library[title] or time()
+    end
     local count = 0
     for _ in pairs(ns.db.books or {}) do count = count + 1 end
     if not current and not known and ns.english and ((ns.db.books or {})[title] or count < 100) then

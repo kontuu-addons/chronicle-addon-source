@@ -11,7 +11,7 @@ local L = ns.L
 local api = LibStub and LibStub("Chronicle-1.0", true)
 if not api then return end
 
-api.apiVersion = 3
+api.apiVersion = 4
 
 local function completed(id)
     local ok, done = pcall(C_QuestLog.IsQuestFlaggedCompleted, id)
@@ -75,6 +75,24 @@ function api:LineText(key)
     local text = ns.Voice.Subtitle(key)
     if type(text) ~= "string" or text == "" then return nil end
     return text, entry and entry.d or nil
+end
+
+--- Who speaks when in a line read by more than one voice (the narrator between an NPC's words, a quote in its
+--- speaker's voice): { {from = 0, to = 3.2, name = "Narrator"}, {from = 3.6, to = 26.8, name = "Wizbang Cranktoggle",
+--- npcID = 3666}, ... }, in seconds into the line. nil for a line with one voice, or one this character may not hear.
+function api:LineSpeakers(key)
+    if not allowed(key) then return nil end
+    local entry = ns.Voice.Get(key)
+    local s = entry and entry.s
+    if type(s) ~= "string" or s == "" then return nil end
+    local npcs = (ns.Lore and ns.Lore.npcs) or {}
+    local out = {}
+    for from, to, name in s:gmatch("([%d%.]+),([%d%.]+),([^|]+)") do
+        local info = npcs[name]
+        out[#out + 1] = { from = tonumber(from), to = tonumber(to), name = name,
+                          npcID = name ~= "Narrator" and type(info) == "table" and info.id or nil }
+    end
+    return #out > 1 and out or nil
 end
 
 --- Hold the speaker window against your frame while it is open: point, relativePoint, x, y as in SetPoint

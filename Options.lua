@@ -21,6 +21,7 @@ local ON_CHANGE = {
     mapPins = function() if ns.Map then ns.Map.Refresh() end end,
     storyPanel = function() if ns.Map then ns.Map.Refresh() end end,
     showLeft = function() if ns.Map then ns.Map.Refresh() end if ns.Journal then ns.Journal.Refresh() end end,
+    hideUnfound = function() if ns.Map then ns.Map.Refresh() end if ns.Journal then ns.Journal.Refresh() end end,
     questMarkers = function() if ns.Map then ns.Map.Refresh() end end,
     muteGameGreetings = function() ns.ApplyGreetingMute() end,
     greetings = function() ns.ApplyGreetingMute() end,
@@ -196,6 +197,7 @@ local function build()
     box("ttsFallback", L["Stand-in voice for new lines"], L["New quests and greetings nobody has recorded yet are read by the game's built-in text-to-speech (sounds robotic) until their proper voice is made."])
 
     section(L["Journal"])
+    box("chroniclePause", L["Pause between chapters"], L["\"Tell my chronicle\" stops after each chapter, and its button turns into Continue. Handy when your story gets long."])
     slider(L["Journal size"], L["Makes the journal window bigger or smaller."], 0.8, 1.3, 0.05,
         function() return ns.settings.journalScale or 1 end, function(v) if ns.Journal.SetScale then ns.Journal.SetScale(v) end end,
         function(v) return math.floor(v * 100 + 0.5) .. "%" end, function() return true end)
@@ -206,11 +208,13 @@ local function build()
     box("levelMilestones", L["Level milestones"], L["Every 10th level, a short word from the narrator and two or three zones where new stories open up for your level. Nothing plays unless you click Listen."])
     box("flightStory", L["The story on flights"], L["When you take a flight, a small note offers the story so far in the zone you're flying to, or its welcome if you haven't been there. Nothing plays unless you click Listen."])
     box("campfire", L["By the fire"], L["When you sit by a camp fire, a small window counts down the minute until the camp's benefits, offers a campfire tale about the zone while you wait, and then shows what the camp gave you."])
+    box("hideUnfound", L["Hide what I haven't found"], L["No hints at all about what you haven't found yet: no chapters still to discover in the journal or on the map, no road ahead, and no empty places or totals in the Library. Everything you have been through stays."])
     box("showLeft", L["Show what's left"], L["Lists the quests still to do in each chapter by name, level and quest giver, and shows where the chapters you haven't found yet start, in the journal and on the map. No story is given away."])
     box("newMarker", L["Mark new Forever quests"], L["Shows \"New in WoW: Forever\" on the quest window for quests that were not in original Classic, and whether they have a voice yet."])
     section(L["Map"])
     box("storyPanel", L["Story panel on the world map"], L["A small panel on a zone's map with its chapters and how far you are, with Play story. On the continent map, hover a zone to see how much of its story you've found."])
     box("mapPins", L["Story chapters on the world map"], L["A book at the quest giver of each chapter you have started. Click it to open the chapter."])
+    box("questHints", L["Quest hints"], L["For playing with the map's quest objectives off: right-click a quest in the quest log or the tracker and choose Hint, or press Hint beside the story so far, and the map shows where that one quest's objectives are. Everything goes back as it was when you close the map."])
     box("questMarkers", L["Quest givers on the map"], L["Shows ! where a quest giver has quests for you right now (the game itself shows ? where to hand in). Turns itself off while Questie is running, which already shows these."])
     box("minimap", L["Minimap button"], L["Left-click opens the journal, right-click the options. Drag to move it around the minimap."])
     box("minimapFree", L["Detach the button from the minimap"], L["The book button can go anywhere on the screen, for example next to your action bars. Drag it where you want it."])

@@ -94,7 +94,8 @@ end
 local function num(v) return type(v) == "number" and v == v and v > -1e9 and v < 1e9 and v or nil end
 local function unit(t)
     if type(t) ~= "table" then return nil end
-    return { name = str(t.name, 64), npcID = num(t.npcID), kind = str(t.kind, 32), sex = num(t.sex), creature = str(t.creature, 64) }
+    return { name = str(t.name, 64), npcID = num(t.npcID), kind = str(t.kind, 32), sex = num(t.sex), creature = str(t.creature, 64),
+             model = num(t.model) }
 end
 local function reader(t)
     if type(t) ~= "table" then return nil end
@@ -122,7 +123,7 @@ local CLEAN = {
     greetings = function(g)
         local text = str(g.text)
         return text and { text = text, name = str(g.name, 64), sex = num(g.sex), creature = str(g.creature, 64),
-                          kind = str(g.kind, 32), zone = str(g.zone, 100), by = reader(g.by) } or nil
+                          model = num(g.model), kind = str(g.kind, 32), zone = str(g.zone, 100), by = reader(g.by) } or nil
     end,
     books = function(b)
         local pages = list(b.pages, 20)

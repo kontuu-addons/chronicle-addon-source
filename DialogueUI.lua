@@ -44,6 +44,10 @@ local provider = {
 }
 
 table.insert(ns.onLogin, function()
+    -- DialogueUI takes one voice provider, the last addon to ask. With Chronicle's quest voices off (or Journal only)
+    -- it leaves that place free, so another voice addon there (Spoken) keeps speaking (thanks AstroCat). Turning the
+    -- voices on again takes effect after a /reload.
+    if ns.settings.journalOnly or not ns.settings.voice then return end
     local api = rawget(_G, "DialogueUIAPI")
     if type(api) == "table" and type(api.SetVOProvider) == "function" then
         local ok = pcall(api.SetVOProvider, provider)

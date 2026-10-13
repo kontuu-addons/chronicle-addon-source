@@ -145,6 +145,12 @@ local function create(host)
     p.journal:SetPoint("LEFT", p.play, "RIGHT", 4, 0)
     p.journal:SetText(L["Journal"])
     p.journal:SetScript("OnClick", function(b) if b.chapter then ns.Journal.Open(b.chapter) end end)
+    -- Quest hints (option): where this quest's objectives are, on the map
+    p.hint = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
+    p.hint:SetSize(60, 20); ns.FitButton(p.hint)
+    p.hint:SetPoint("LEFT", p.journal, "RIGHT", 4, 0)
+    p.hint:SetText(L["Hint"])
+    p.hint:SetScript("OnClick", function(b) if b.quest and ns.Hint then ns.Hint.Show(b.quest) end end)
     p:Hide()
     return p
 end
@@ -177,6 +183,8 @@ local function update()
         C_Timer.After(0, fit) -- the text's height is only known for sure once it has been laid out
     end
     panel.play:SetText(ns.Voice.Owner() == panel.play and L["Stop"] or L["Play recap"])
+    panel.hint.quest = id
+    panel.hint:SetShown(ns.Hint and ns.Hint.Available(id) or false)
     panel:Show()
 end
 

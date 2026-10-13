@@ -42,6 +42,9 @@ local DEFAULTS = {
     voice = true,        -- play recorded voiceover when a quest dialog opens
     bgVoices = true,     -- while Chronicle talks, the game's Sound in Background is on (alt-tab keeps the line going)
     duck = true,         -- music and ambience go down while Chronicle talks (thanks Alche)
+    questHints = false,
+    hideUnfound = false, -- no counts, gaps or pins for what this character hasn't found yet (thanks AstroCat)  -- Hint for one quest's objectives on the map (for playing with objectives off)
+    chroniclePause = false, -- "Tell my chronicle" stops after each chapter until you press Continue
     journalScale = 1,    -- the journal's size
     stopOnClose = false, -- keep talking after the quest window closes (works with auto-accept addons)
     speaker = true,      -- show the "now speaking" bar
@@ -107,7 +110,7 @@ local function registerPack(folder, lines)
     local n = 0
     -- each line stays the pack's own small table { file, seconds, who, words }; e.f, e.d, e.w, e.x and e.p read
     -- it through one shared lookup per pack (a copy per line cost about 9 MB for 31,000 lines)
-    local FIELDS = { f = 1, d = 2, w = 3, x = 4 }
+    local FIELDS = { f = 1, d = 2, w = 3, x = 4, s = 5 } -- s: who speaks when, in a line with more than one voice
     local view = { __index = function(t, k) if k == "p" then return folder end local i = FIELDS[k] return i and rawget(t, i) end }
     for key, e in pairs(lines) do
         if type(e) == "table" and type(e[1]) == "string" then
@@ -499,6 +502,9 @@ SlashCmdList.CHRONICLE = function(msg)
         if not ok then ns.pr("campdebug failed: " .. tostring(err)) end
     elseif cmd == "stop" then
         ns.Voice.Stop()
+    elseif cmd == "library" and (msg or ""):lower():find("preview", 1, true) then
+        ns.pr(ns.Journal.LibraryPreview() and "library preview on: about a third of the books shown as found (nothing is saved). /lore library preview again turns it off."
+            or "library preview off.")
     elseif cmd == "replay" then
         if not ns.Voice.Replay() then ns.pr(L["nothing to replay yet."]) end
     elseif cmd == "report" then

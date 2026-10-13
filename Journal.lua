@@ -175,7 +175,7 @@ local function signature(withLocked)
     local profs = {}
     for id in pairs(myProfessions()) do profs[#profs + 1] = id end
     table.sort(profs)
-    return table.concat({ #c.journal, active, tostring(withLocked), tostring(ns.settings.showLeft),
+    return table.concat({ #c.journal, active, tostring(withLocked), tostring(ns.settings.showLeft), tostring(ns.settings.hideUnfound),
         GetRealZoneText and GetRealZoneText() or "", table.concat(profs, ","),
         ns.Holiday and ns.Holiday.Signature and ns.Holiday.Signature() or "" }, "|")
 end
@@ -227,7 +227,7 @@ function J.BuildChapters(withLocked)
 
     -- Show what's left: chapters not found yet, in the zones this story has reached and the zone you're in. Only
     -- where they start; the chapter itself opens once you take that quest.
-    if withLocked and ns.settings.showLeft then
+    if withLocked and ns.settings.showLeft and not ns.settings.hideUnfound then
         local zones = {}
         for _, ch in ipairs(out) do zones[ch.zone or ""] = true end
         local here = GetRealZoneText and ns.zoneEN(GetRealZoneText())
@@ -605,13 +605,15 @@ local function getTodoRow(i)
         click()
         local q = self.quest
         if q and q.open then J.Open(q.open)
+        elseif q and q.keys then
+            if ns.Voice.Owner() == self then ns.Voice.Stop() else ns.Voice.PlayQueue(q.keys, self) end
         elseif q and ns.Map then ns.Map.Waypoint(q.zone, q.x, q.y, q.title) end
     end)
     r:SetScript("OnEnter", function(self)
         if not (self.quest and self.quest.x) then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(self.quest.title, 1, 1, 1)
-        GameTooltip:AddLine(L["Click to mark the quest giver on the map"], 0.8, 0.8, 0.8)
+        GameTooltip:AddLine(self.quest.tip or L["Click to mark the quest giver on the map"], 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
     r:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -633,7 +635,10 @@ local function placeTodos(items, y, n, pw, x)
             r.title:ClearAllPoints(); r.title:SetPoint("TOPLEFT", 0, 0)
             r.title:SetFontObject("QuestTitleFont"); r.title:SetText(q); r.who:SetText("")
         else
-            r.quest = q; r.pin:SetShown(q.x ~= nil); r:EnableMouse(q.x ~= nil or q.open ~= nil)
+            r.quest = q; r:EnableMouse(q.x ~= nil or q.open ~= nil or q.keys ~= nil)
+            r.pin:SetTexture(q.icon or "Interface\\AddOns\\ForeverChronicle\\Media\\pin")
+            r.pin:SetSize(q.icon and 16 or 14, q.icon and 16 or 14)
+            r.pin:SetShown(q.x ~= nil or q.icon ~= nil)
             r.title:ClearAllPoints(); r.title:SetPoint("TOPLEFT", 20, 0)
             r.title:SetFontObject("QuestFont")
             local line, who = J.ToDoLine(q, true)
@@ -661,7 +666,75 @@ local function showZoneLinks(zone)
 end
 
 -- the button at the top right of the page: Play recap on a chapter, Listen (or another label) elsewhere
+-- "Tell my chronicle": how long it is and how far it has got, and (option) a pause after each chapter, with the
+-- button turning into Continue (thanks Cav3dust)
+local tell = { keys = nil, i = 0, waiting = false }
+
+local function tellSeconds(keys, from)
+    local total = 0
+    for i = from or 1, #keys do
+        local e = ns.Voice.Get(keys[i])
+        total = total + (e and e.d or 0)
+    end
+    return total
+end
+
+local function minutes(seconds) return math.max(1, math.floor(seconds / 60 + 0.5)) end
+
+function J.TellChronicle(b)
+    if ns.Voice.Owner() == b then -- Stop
+        ns.Voice.Stop()
+        tell.keys, tell.i, tell.waiting = nil, 0, false
+        J.OnVoiceChanged()
+        return
+    end
+    if not tell.waiting then
+        local keys = {}
+        for _, k in ipairs(b.keys or {}) do if ns.Voice.Get(k) then keys[#keys + 1] = k end end
+        if #keys == 0 then return end
+        tell.keys, tell.i = keys, 0
+    end
+    tell.waiting = false
+    if ns.settings.chroniclePause then
+        tell.i = tell.i + 1
+        ns.Voice.PlayQueue({ tell.keys[tell.i] }, b)
+    else
+        local rest = {}
+        for i = tell.i + 1, #tell.keys do rest[#rest + 1] = tell.keys[i] end
+        tell.i = #tell.keys
+        ns.Voice.PlayQueue(rest, b)
+    end
+end
+
+-- the line under the button: the length, or where it has got to
+local function tellInfo()
+    local fs = header.tellInfo
+    if not (fs and fs:IsShown()) then return end
+    local keys = tell.keys
+    if keys and ns.Voice.Owner() == header.recap then
+        local idx
+        local playing = ns.Voice.PlayingKey()
+        for i, k in ipairs(keys) do if k == playing then idx = i; break end end
+        if idx then
+            local e = ns.Voice.Get(playing)
+            local left = tellSeconds(keys, idx + 1) + math.max(0, (e and e.d or 0) - (ns.Voice.PlayingFor() or 0))
+            fs:SetText((L["Chapter %d of %d  ·  about %d min left"]):format(idx, #keys, minutes(left)))
+            return
+        end
+    elseif keys and tell.waiting then
+        fs:SetText((L["Paused after chapter %d of %d"]):format(tell.i, #keys))
+        return
+    end
+    local mine = {}
+    for _, k in ipairs(header.recap.keys or {}) do if ns.Voice.Get(k) then mine[#mine + 1] = k end end
+    local count = #mine == 1 and L["1 chapter  ·  about %d min"]:format(minutes(tellSeconds(mine)))
+        or (L["%d chapters  ·  about %d min"]):format(#mine, minutes(tellSeconds(mine)))
+    fs:SetText(#mine > 0 and count or "")
+end
+
 local function listenButton(keys, label)
+    header.recap.tell = nil
+    header.recap.libraryToggle = nil
     header.recap.keys, header.recap.label = keys, label
     local any = false
     for _, k in ipairs(keys) do if ns.Voice.Get(k) then any = true; break end end
@@ -936,7 +1009,7 @@ local function renderZone(zone)
                     for _, q in ipairs(left) do quests[#quests + 1] = q end
                     going[#going + 1] = { ch = ch, total = total, quests = quests }
                 end
-            elseif #left > 0 then
+            elseif #left > 0 and not ns.settings.hideUnfound then
                 -- not found yet: only where it starts, never its name or the rest
                 hidden[#hidden + 1] = { quests = { left[1] } }
             end
@@ -962,6 +1035,7 @@ local function renderZone(zone)
 
     -- the numbers, each in its own box
     local stats = { { #done, L["Finished"] }, { #going, L["In progress"] }, { #hidden, L["To discover"] } }
+    if ns.settings.hideUnfound then stats[3] = nil end
     local bw = (width - GAP * (#stats - 1)) / #stats
     for i, st in ipairs(stats) do
         local b = chronGet("stat", makeStat)
@@ -1012,6 +1086,37 @@ local function renderZone(zone)
             y = y - 22
         end
     end
+    y = y - 10
+    -- books, plaques and letters found here: the ones you have read (click: hear it), the others only as a place
+    local here = J.ZoneBooks(zone)
+    J.booksAt = -y - 10
+    if #here > 0 then
+        local found, items, notes = 0, {}, 0
+        for _, b in ipairs(here) do
+            if b.found then
+                found = found + 1
+                items[#items + 1] = { title = b.title, from = L["Click to hear it"], keys = b.keys, icon = J.IconOf(b.title, b.x) }
+            elseif not ns.settings.hideUnfound then
+                if b.x then
+                    items[#items + 1] = { title = L["Not found yet"], from = L["Lies here"], zone = zone, x = b.x, y = b.y,
+                        tip = L["Click to mark it on the map"] }
+                else
+                    notes = notes + 1 -- letters have no place of their own: one line for all of them
+                end
+            end
+        end
+        if notes > 0 then
+            items[#items + 1] = { title = notes == 1 and L["1 more note comes with a quest here"]
+                or (L["%d more notes come with quests here"]):format(notes) }
+        end
+        if #items > 0 then
+            y, n = placeTodos({ ns.settings.hideUnfound and ("%s  (%d)"):format(L["Books and notes"], found)
+                or ("%s  (%d/%d)"):format(L["Books and notes"], found, #here) }, y, n, pw)
+            y, n = placeTodos(items, y, n, pw)
+            y = y - 10
+        end
+    end
+
     page:SetHeight(-y + 20)
 end
 
@@ -1301,6 +1406,482 @@ local function journey()
     return zones
 end
 
+-- ---------------------------------------------------------------- render: the library
+-- Every book, letter and plaque this character has read, to hear again. The ones not found yet are only counted,
+-- never named.
+-- the books this character has read; /lore library preview pretends about a third were found (this session only,
+-- nothing saved), to see the shelves full
+local preview
+function J.LibraryPreview()
+    if preview then preview = nil else
+        preview = {}
+        for title in pairs((ns.Lore and ns.Lore.books) or {}) do
+            if math.random() < 0.33 then preview[title] = time() - math.random(0, 86400 * 7) end
+        end
+    end
+    if frame and frame:IsShown() then J.Refresh() end
+    return preview ~= nil
+end
+local function libraryRead() return preview or (ns.char and ns.char.library) or {} end
+
+function J.LibraryCount()
+    local total, found = 0, 0
+    local read = libraryRead()
+    for title in pairs((ns.Lore and ns.Lore.books) or {}) do
+        total = total + 1
+        if read[title] then found = found + 1 end
+    end
+    return found, total
+end
+
+local function bookKeys(title)
+    local keys = {}
+    for _, item in ipairs(((ns.Lore and ns.Lore.books) or {})[title] or {}) do
+        if ns.Voice.Get(item[1]) then keys[#keys + 1] = item[1] end
+    end
+    return keys
+end
+
+-- the books and plaques lying in a zone (the builder's list from Wowhead), found ones first, each once
+function J.ZoneBooks(zone)
+    local out, seen = {}, {}
+    local read = libraryRead()
+    for _, b in ipairs((((ns.Lore and ns.Lore.bookPlaces) or {})[zone]) or {}) do
+        local title = b[1]
+        if not seen[title] and ((ns.Lore and ns.Lore.books) or {})[title] then
+            seen[title] = true
+            out[#out + 1] = { title = title, x = b[2], y = b[3], found = read[title] and true or false, keys = bookKeys(title) }
+        end
+    end
+    table.sort(out, function(a, b)
+        if a.found ~= b.found then return a.found end
+        return a.found and a.title < b.title or (not a.found and (a.y or 0) < (b.y or 0))
+    end)
+    return out
+end
+
+-- a series: "The Rebellion In Eldre'Thalas, Part 2" -> "The Rebellion In Eldre'Thalas", 2
+local ROMAN = { I = 1, V = 5, X = 10, L = 50 }
+---@param word string
+---@return number?
+local function numberOf(word)
+    if word:match("^%d+$") then return tonumber(word) end
+    local n, last = 0, 0
+    for k = #word, 1, -1 do
+        local v = ROMAN[word:sub(k, k)]
+        if not v then return end
+        if v < last then n = n - v else n = n + v; last = v end
+    end
+    return n > 0 and n or nil
+end
+
+-- "X, Part 2", "X - Chapter IV", "X - Page 14", "X (Day 87)": the series and where in it; whole chapters come before loose pages
+-- series the game doesn't number the usual way
+local NAMED = {
+    ["The First Troll Legend"] = { "The Troll Legends", 1 }, ["The Second Troll Legend"] = { "The Troll Legends", 2 },
+    ["The Third Troll Legend"] = { "The Troll Legends", 3 }, ["The Fourth Troll Legend"] = { "The Troll Legends", 4 },
+    ["A Clue to Sander's Treasure"] = { "Sander's Treasure", 1 }, ["Another Clue to Sander's Treasure"] = { "Sander's Treasure", 2 },
+    ["Final Clue to Sander's Treasure"] = { "Sander's Treasure", 3 },
+    ["Secret Note #1"] = { "Secret Notes", 1 }, ["Secret Note #2"] = { "Secret Notes", 2 }, ["Secret Note #3"] = { "Secret Notes", 3 },
+}
+
+local function seriesOf(title)
+    local named = NAMED[title]
+    if named then return named[1], named[2] end
+    local base, kind, word = title:match("^(.-),?%s+%-?%s*(%a+)%s+([%dIVXL]+)$")
+    if not base then base, word = title:match("^(.-)%s+%(Day%s+(%d+)%)$"); kind = "day" end
+    if not base then return end
+    kind = kind:lower()
+    if kind ~= "part" and kind ~= "volume" and kind ~= "chapter" and kind ~= "book" and kind ~= "page" and kind ~= "day" then return end
+    local n = numberOf(word)
+    if not n then return end
+    return base, kind == "page" and 1000 + n or n
+end
+
+-- what a book looks like on the shelf
+local ICON_BOOK, ICON_LETTER = "Interface\\Icons\\INV_Misc_Book_09", "Interface\\Icons\\INV_Letter_15"
+local ICON_PLAQUE, ICON_SCROLL = "Interface\\Icons\\INV_Misc_Book_11", "Interface\\Icons\\INV_Scroll_03"
+local function iconOf(title, object)
+    local t = title:lower()
+    if t:find("plaque") or t:find("monument") or t:find("memorial") or t:find("marker") or t:find("tablet")
+        or t:find("grave") or t:find("tomb") then return ICON_PLAQUE end
+    if t:find("letter") or t:find("note") or t:find("orders") or t:find("report") or t:find("instructions")
+        or t:find("envelope") or t:find("message") then return ICON_LETTER end
+    if t:find("map") or t:find("scroll") or t:find("page") or t:find("journal") then return ICON_SCROLL end
+    return object and ICON_BOOK or ICON_LETTER
+end
+J.IconOf = iconOf
+
+local function makeTile()
+    local f = chronBox()
+    f:SetHeight(58)
+    f.icon = f:CreateTexture(nil, "ARTWORK"); f.icon:SetSize(34, 34); f.icon:SetPoint("LEFT", 8, 0)
+    local rim = f:CreateTexture(nil, "OVERLAY"); rim:SetSize(38, 38); rim:SetPoint("CENTER", f.icon, "CENTER")
+    rim:SetTexture("Interface\\Buttons\\UI-Quickslot2"); rim:SetTexCoord(0.2, 0.8, 0.2, 0.8); rim:SetAlpha(0.6)
+    f.title = text(f, "GameFontHighlight", INK_TITLE); f.title:SetPoint("TOPLEFT", f.icon, "TOPRIGHT", 8, 2)
+    f.title:SetPoint("RIGHT", -8, 0); f.title:SetJustifyV("TOP"); f.title:SetWordWrap(true)
+    f.title:SetHeight(28) -- a fixed two lines, so a reused tile never keeps an old one-line height
+    if f.title.SetMaxLines then f.title:SetMaxLines(2) end
+    f.sub = text(f, "GameFontNormalSmall", INK_SOFT); f.sub:SetPoint("BOTTOMLEFT", f.icon, "BOTTOMRIGHT", 8, -2)
+    f.sub:SetPoint("RIGHT", -8, 0)
+    f.bar = chronBar(f); f.bar:SetPoint("BOTTOMLEFT", 6, 4); f.bar:SetPoint("BOTTOMRIGHT", -6, 4); f.bar:SetHeight(3)
+    f:SetScript("OnClick", function(self)
+        if not self.keys or #self.keys == 0 then return end
+        click()
+        if ns.Voice.Owner() == self then ns.Voice.Stop() return end
+        -- a series: choose where to start
+        if self.parts and #self.parts > 1 and MenuUtil and MenuUtil.CreateContextMenu then
+            MenuUtil.CreateContextMenu(self, function(_, root)
+                root:CreateTitle(self.series)
+                root:CreateButton(L["From the start"], function() ns.Voice.PlayQueue(self.keys, self) end)
+                for _, part in ipairs(self.parts) do
+                    local label = part.title:sub(1, #self.series) == self.series and part.title:sub(#self.series + 1):gsub("^[%s,%-]+", "") or part.title
+                    root:CreateButton(label ~= "" and label or part.title, function() ns.Voice.PlayQueue(bookKeys(part.title), self) end)
+                end
+            end)
+            return
+        end
+        ns.Voice.PlayQueue(self.keys, self)
+    end)
+    -- the reading bar follows the voice
+    f:SetScript("OnUpdate", function(self, el)
+        self.t = (self.t or 0) + el
+        if self.t < 0.25 then return end
+        self.t = 0
+        local mine = ns.Voice.Owner() == self
+        self.bar:SetShown(mine)
+        if mine then
+            local key, at = ns.Voice.PlayingKey(), ns.Voice.PlayingFor() or 0
+            local total, before = 0, 0
+            for _, k in ipairs(self.keys or {}) do
+                local e = ns.Voice.Get(k)
+                local d = e and e.d or 0
+                if key and k == key then before = total + math.min(at, d) end
+                total = total + d
+            end
+            self.bar:SetValue(total > 0 and before / total or 0)
+        end
+    end)
+    return f
+end
+
+-- ---- the bookcase: books as spines standing on wooden shelves, gaps where the ones not found yet will stand
+local SPINES = { { 0.45, 0.12, 0.10 }, { 0.15, 0.30, 0.18 }, { 0.14, 0.22, 0.40 }, { 0.40, 0.26, 0.12 },
+    { 0.30, 0.16, 0.35 }, { 0.12, 0.32, 0.32 }, { 0.50, 0.38, 0.16 }, { 0.22, 0.20, 0.18 } }
+local PAPER = { { 0.82, 0.74, 0.56 }, { 0.72, 0.64, 0.48 }, { 0.86, 0.80, 0.66 }, { 0.66, 0.56, 0.40 } }
+local function hashOf(str)
+    local h = 7
+    for i = 1, #str do h = (h * 31 + str:byte(i)) % 2147483647 end
+    return h
+end
+
+-- a soft fall from one colour to another (the game's gradients), flat where the client has none
+local WHITE = "Interface\\Buttons\\WHITE8x8"
+local function shade(t, orient, r1, g1, b1, a1, r2, g2, b2, a2)
+    t:SetTexture(WHITE)
+    if t.SetGradient and CreateColor and pcall(t.SetGradient, t, orient, CreateColor(r1, g1, b1, a1), CreateColor(r2, g2, b2, a2)) then
+        return
+    end
+    t:SetVertexColor((r1 + r2) / 2, (g1 + g2) / 2, (b1 + b2) / 2, (a1 + a2) / 2)
+end
+
+local function makeSpine()
+    local f = CreateFrame("Button", nil, page)
+    f.body = f:CreateTexture(nil, "ARTWORK")
+    f.body:SetAllPoints()
+    f.tag = f:CreateTexture(nil, "ARTWORK", nil, 2); f.tag:SetHeight(11)
+    f.tag:SetPoint("TOPLEFT", 2, -14); f.tag:SetPoint("TOPRIGHT", -2, -14)
+    f.band1 = f:CreateTexture(nil, "ARTWORK", nil, 2); f.band1:SetHeight(2)
+    f.band1:SetPoint("TOPLEFT", 1, -5); f.band1:SetPoint("TOPRIGHT", -1, -5); f.band1:SetColorTexture(0.86, 0.70, 0.36, 0.9)
+    f.band2 = f:CreateTexture(nil, "ARTWORK", nil, 2); f.band2:SetHeight(2)
+    f.band2:SetPoint("BOTTOMLEFT", 1, 5); f.band2:SetPoint("BOTTOMRIGHT", -1, 5); f.band2:SetColorTexture(0.86, 0.70, 0.36, 0.9)
+    f.band3 = f:CreateTexture(nil, "ARTWORK", nil, 2); f.band3:SetHeight(1)
+    f.band3:SetPoint("BOTTOMLEFT", 1, 9); f.band3:SetPoint("BOTTOMRIGHT", -1, 9); f.band3:SetColorTexture(0.86, 0.70, 0.36, 0.7)
+    f.gem = f:CreateTexture(nil, "ARTWORK", nil, 3); f.gem:SetSize(3, 3); f.gem:SetPoint("CENTER", 0, -4)
+    f.gem:SetColorTexture(0.95, 0.80, 0.40, 1)
+    f.foot = f:CreateTexture(nil, "BACKGROUND"); f.foot:SetHeight(3)
+    f.foot:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 1, 0); f.foot:SetPoint("TOPRIGHT", f, "BOTTOMRIGHT", 3, 0)
+    f.foot:SetColorTexture(0, 0, 0, 0.4)
+    f.glow = f:CreateTexture(nil, "OVERLAY"); f.glow:SetAllPoints(); f.glow:SetColorTexture(1, 0.9, 0.6, 0.25)
+    f.glow:SetBlendMode("ADD"); f.glow:Hide()
+    local hl = f:CreateTexture(nil, "HIGHLIGHT"); hl:SetAllPoints(); hl:SetColorTexture(1, 0.9, 0.6, 0.18); hl:SetBlendMode("ADD")
+    f:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if self.missing then
+            GameTooltip:SetText(L["Not found yet"], 0.7, 0.7, 0.7)
+        else
+            GameTooltip:SetText(self.title, 1, 1, 1)
+            GameTooltip:AddLine(self.pages == 1 and L["1 page"] or (L["%d pages"]):format(self.pages or 0), 0.8, 0.8, 0.8)
+            GameTooltip:AddLine(L["Click to hear it"], 0.6, 0.8, 1)
+        end
+        GameTooltip:Show()
+    end)
+    f:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    f:SetScript("OnClick", function(self)
+        if self.missing or not self.keys or #self.keys == 0 then return end
+        click()
+        if ns.Voice.Owner() == self then ns.Voice.Stop() else ns.Voice.PlayQueue(self.keys, self) end
+    end)
+    return f
+end
+
+local function makeWood()
+    return page:CreateTexture(nil, "BORDER")
+end
+
+-- the brass name plate above a bookcase
+local function makePlate()
+    local f = CreateFrame("Frame", nil, page)
+    f:SetHeight(22)
+    f.bg = f:CreateTexture(nil, "BACKGROUND"); f.bg:SetAllPoints()
+    f.rim = f:CreateTexture(nil, "BORDER"); f.rim:SetPoint("TOPLEFT", -1, 1); f.rim:SetPoint("BOTTOMRIGHT", 1, -1)
+    f.rim:SetColorTexture(0.80, 0.62, 0.30, 1)
+    f.text = f:CreateFontString(nil, "OVERLAY", "GameFontNormal"); f.text:SetPoint("CENTER", 0, 0)
+    f.text:SetTextColor(0.98, 0.84, 0.48); f.text:SetShadowColor(0, 0, 0, 0.8); f.text:SetShadowOffset(1, -1)
+    return f
+end
+
+local function wood(y, x, w, h, r1, g1, b1, r2, g2, b2)
+    local t = chronGet("wood", makeWood)
+    t:SetPoint("TOPLEFT", page, "TOPLEFT", x, y); t:SetSize(w, h)
+    shade(t, "VERTICAL", r2, g2, b2, 1, r1, g1, b1, 1) -- VERTICAL goes bottom to top: r1 on top
+    return t
+end
+
+-- one bookcase: a name plate, the found books in order (a little wider or narrower each), then the gaps
+local function bookcase(y, width, title, spines, missing, letters)
+    local plate = chronGet("plate", makePlate)
+    plate.text:SetText(title)
+    plate:SetWidth(plate.text:GetStringWidth() + 28)
+    plate:SetPoint("TOP", page, "TOPLEFT", width / 2, y)
+    plate.bg:SetColorTexture(0.20, 0.12, 0.05, 1) -- dark wood, gold letters
+    y = y - 28
+    local rowH = letters and 62 or 86
+    local inner = width - 20
+    -- lay the books out first: each its own width, wrapping to the next shelf
+    local rows, x, row = { {} }, 0, 1
+    local function place(item, w)
+        if x + w > inner and x > 0 then row = row + 1; rows[row] = {}; x = 0 end
+        rows[row][#rows[row] + 1] = { item = item, x = x, w = w }
+        x = x + w + 2
+    end
+    for _, sp in ipairs(spines) do place(sp, sp.w) end
+    for _ = 1, missing do place(false, letters and 9 or 13) end
+    local caseH = #rows * (rowH + 12) + 6
+    -- the case: a top board, its back wall, sides, a plank under every shelf and a base
+    wood(y, -2, width + 4, 8, 0.46, 0.29, 0.12, 0.28, 0.16, 0.06)
+    local back = wood(y - 8, 0, width, caseH, 0.10, 0.06, 0.02, 0.22, 0.13, 0.05)
+    back:SetAlpha(0.85)
+    wood(y - 8, 0, 8, caseH, 0.42, 0.26, 0.11, 0.30, 0.18, 0.07)
+    wood(y - 8, width - 8, 8, caseH, 0.42, 0.26, 0.11, 0.30, 0.18, 0.07)
+    for r = 1, #rows do
+        local py = y - 8 - r * (rowH + 12) + 4
+        wood(py, 0, width, 8, 0.56, 0.37, 0.16, 0.34, 0.21, 0.08)
+    end
+    wood(y - 8 - caseH, -2, width + 4, 6, 0.30, 0.18, 0.07, 0.18, 0.10, 0.04)
+    -- the books
+    for r, items in ipairs(rows) do
+        local base = y - 8 - r * (rowH + 12) + 4
+        for _, it in ipairs(items) do
+            local sp = it.item
+            local f = chronGet("spine", makeSpine)
+            local playing = sp and ns.Voice.Owner() == f
+            local h = sp and sp.h or (rowH - 16)
+            f:SetSize(it.w, h)
+            f:SetPoint("BOTTOMLEFT", page, "TOPLEFT", 10 + it.x, base + (playing and 8 or 0))
+            f.missing = not sp
+            if sp then
+                local c = sp.color
+                f.title, f.pages, f.keys = sp.title, sp.pages, sp.keys
+                shade(f.body, "HORIZONTAL", math.min(1, c[1] * 1.35), math.min(1, c[2] * 1.35), math.min(1, c[3] * 1.35), 1,
+                    c[1] * 0.55, c[2] * 0.55, c[3] * 0.55, 1)
+                local style = sp.style
+                f.band1:SetShown(not letters); f.band2:SetShown(not letters)
+                f.band3:SetShown(not letters and style % 3 == 0)
+                f.tag:SetShown(not letters and style % 2 == 0)
+                if f.tag:IsShown() then shade(f.tag, "VERTICAL", 0.72, 0.64, 0.46, 1, 0.88, 0.80, 0.62, 1) end
+                f.gem:SetShown(not letters and style % 5 == 1)
+                f.foot:Show(); f:SetAlpha(1)
+            else
+                shade(f.body, "HORIZONTAL", 0.07, 0.04, 0.01, 0.55, 0.03, 0.02, 0.0, 0.55) -- an empty slot
+                f.band1:Hide(); f.band2:Hide(); f.band3:Hide(); f.tag:Hide(); f.gem:Hide(); f.foot:Hide()
+                f:SetAlpha(0.75)
+            end
+            f.glow:SetShown(playing and true or false)
+        end
+    end
+    return y - 8 - caseH - 22
+end
+
+local function renderLibrary()
+    local pw = page:GetWidth()
+    local width = pw - 10
+    hideAll()
+    header.title:Show(); header.sub:Show(); header.intro:Show()
+    header.title:SetText(L["Library"])
+    local books = (ns.Lore and ns.Lore.books) or {}
+    local objects = (ns.Lore and ns.Lore.bookObjects) or {}
+    local read = libraryRead()
+    local found, total = J.LibraryCount()
+    header.sub:SetText(ns.settings.hideUnfound and (L["%d found"]):format(found) or (L["%d of %d found"]):format(found, total))
+    header.intro:SetWidth(width)
+    header.intro:SetText(found > 0 and L["Every book, letter and plaque you have read. Click one to hear it again."]
+        or L["Open a book, a letter or a plaque and it goes on your shelf here, to hear again whenever you like."])
+    local y, n = -(54 + header.intro:GetStringHeight() + 16), 1
+    local GAP = 8
+
+    -- the shelf entries: a book on its own, or a series with the parts found so far, in order
+    local seriesTotal = {}
+    for title in pairs(books) do
+        local base = seriesOf(title)
+        if base then seriesTotal[base] = (seriesTotal[base] or 0) + 1 end
+    end
+    local entries, byBase, pages, seriesFound = {}, {}, 0, 0
+    for title, items in pairs(books) do
+        if read[title] then
+            pages = pages + #items
+            local base, part = seriesOf(title)
+            if base and seriesTotal[base] > 1 then
+                local e = byBase[base]
+                if not e then
+                    e = { title = base, parts = {}, object = objects[title], t = 0, series = true }
+                    byBase[base] = e; entries[#entries + 1] = e; seriesFound = seriesFound + 1
+                end
+                e.parts[#e.parts + 1] = { part = part, title = title }
+                e.t = math.max(e.t, read[title])
+            else
+                entries[#entries + 1] = { title = title, object = objects[title], t = read[title], pages = #items }
+            end
+        end
+    end
+    for _, e in ipairs(entries) do
+        if e.series then
+            table.sort(e.parts, function(a, b) return a.part < b.part end)
+            e.keys, e.pages = {}, 0
+            for _, p in ipairs(e.parts) do
+                for _, k in ipairs(bookKeys(p.title)) do e.keys[#e.keys + 1] = k end
+                e.pages = e.pages + #(books[p.title] or {})
+            end
+        else
+            e.keys = bookKeys(e.title)
+        end
+    end
+
+    -- the numbers, each in its own box
+    local stats = { { found, L["Found"] }, { pages, L["Pages to hear"] }, { seriesFound, L["Series"] }, { total - found, L["Still to find"] } }
+    if ns.settings.hideUnfound then stats[4] = nil end
+    local bw = (width - GAP * (#stats - 1)) / #stats
+    for k, st in ipairs(stats) do
+        local b = chronGet("stat", makeStat)
+        b:SetSize(bw, 50); b:SetPoint("TOPLEFT", page, "TOPLEFT", (k - 1) * (bw + GAP), y)
+        b.num:SetText(tostring(st[1])); b.label:SetText(st[2])
+    end
+    y = y - 50 - 20
+
+    -- the view: the bookcase, or tiles (the button at the top right switches)
+    header.recap.tell, header.recap.keys = nil, {}
+    header.recap.libraryToggle = true
+    local asShelves = (ns.settings.libraryView or "shelves") == "shelves"
+    header.recap:SetText(asShelves and L["Show as tiles"] or L["Show as shelves"])
+    local fs = header.recap:GetFontString()
+    header.recap:SetWidth(math.max(100, (fs and fs:GetStringWidth() or 0) + 28))
+    header.recap:SetEnabled(true); header.recap:Show()
+    if asShelves then
+        for _, sh in ipairs({ { L["Found in the world"], true }, { L["Letters and notes"], false } }) do
+            local spines, all, have = {}, 0, 0
+            for title in pairs(books) do
+                if (objects[title] and true or false) == sh[2] then
+                    all = all + 1
+                    if read[title] then have = have + 1 end
+                end
+            end
+            local mine = {}
+            for _, e in ipairs(entries) do if (e.object and true or false) == sh[2] then mine[#mine + 1] = e end end
+            table.sort(mine, function(a, b) return a.title < b.title end)
+            for _, e in ipairs(mine) do
+                local colors = sh[2] and SPINES or PAPER
+                local color = colors[hashOf(e.title) % #colors + 1]
+                local parts = e.series and e.parts or { { title = e.title } }
+                for _, part in ipairs(parts) do -- a series stands together, in one colour
+                    local hh = hashOf(part.title)
+                    spines[#spines + 1] = { title = part.title, pages = #(books[part.title] or {}), keys = bookKeys(part.title),
+                        color = color, style = hh % 30,
+                        w = sh[2] and (11 + hh % 6) or (8 + hh % 3),
+                        h = (sh[2] and 56 or 38) + hh % (sh[2] and 24 or 16) }
+                end
+            end
+            if ns.settings.hideUnfound then
+                y = bookcase(y, width, ("%s  ·  %d"):format(sh[1], have), spines, 0, not sh[2])
+            else
+                y = bookcase(y, width, ("%s  ·  %d / %d"):format(sh[1], have, all), spines, all - have, not sh[2])
+            end
+        end
+        page:SetHeight(-y + 20)
+        return
+    end
+
+    -- tiles, three to a row
+    local cw = (width - GAP * 2) / 3
+    local function tiles(items)
+        local col = 0
+        for _, e in ipairs(items) do
+            local t = chronGet("tile", makeTile)
+            t:SetSize(cw, 58); t:SetPoint("TOPLEFT", page, "TOPLEFT", col * (cw + GAP), y)
+            t:SetAlpha(1); t:EnableMouse(true)
+            t.keys = e.keys
+            t.parts, t.series = e.series and e.parts or nil, e.series and e.title or nil
+            t.icon:SetTexture(e.icon or iconOf(e.title, e.object)); t.icon:SetDesaturated(e.missing and true or false)
+            t.title:SetText(e.title)
+            local playing = ns.Voice.Owner() == t
+            if e.missing then
+                t.sub:SetText(e.sub); t:SetAlpha(0.55); t:EnableMouse(false)
+            elseif playing then
+                t.sub:SetText(L["Reading..."])
+            elseif e.series then
+                t.sub:SetText((L["Part %d of %d found"]):format(#e.parts, seriesTotal[e.title] or #e.parts))
+            else
+                t.sub:SetText(e.pages == 1 and L["1 page"] or (L["%d pages"]):format(e.pages or 0))
+            end
+            col = col + 1
+            if col == 3 then col = 0; y = y - 58 - GAP end
+        end
+        if col > 0 then y = y - 58 - GAP end
+    end
+
+    -- last read: the three newest
+    if #entries > 3 then
+        table.sort(entries, function(a, b) return (a.t or 0) > (b.t or 0) end)
+        y, n = placeTodos({ L["Last read"] }, y, n, pw)
+        tiles({ entries[1], entries[2], entries[3] })
+        y = y - 10
+    end
+
+    -- the shelves
+    local shelves = {
+        { L["Found in the world"], true },
+        { L["Letters and notes"], false },
+    }
+    for _, sh in ipairs(shelves) do
+        local items, have, all = {}, 0, 0
+        for title in pairs(books) do
+            if (objects[title] and true or false) == sh[2] then
+                all = all + 1
+                if read[title] then have = have + 1 end
+            end
+        end
+        for _, e in ipairs(entries) do if (e.object and true or false) == sh[2] then items[#items + 1] = e end end
+        table.sort(items, function(a, b) return a.title < b.title end)
+        y, n = placeTodos({ ns.settings.hideUnfound and ("%s  (%d)"):format(sh[1], have) or ("%s  (%d/%d)"):format(sh[1], have, all) }, y, n, pw)
+        if all - have > 0 and not ns.settings.hideUnfound then
+            items[#items + 1] = { title = L["Still on the shelves"], missing = true, icon = sh[2] and ICON_BOOK or ICON_LETTER,
+                                sub = (L["%d more to find"]):format(all - have) }
+        end
+        tiles(items)
+        y = y - 10
+    end
+    page:SetHeight(-y + 20)
+end
+
 local function renderChronicle()
     local pw = page:GetWidth()
     local width = pw - 10
@@ -1340,13 +1921,19 @@ local function renderChronicle()
         end
     end
     listenButton(keys, L["Tell my chronicle"])
+    header.recap.tell = true
+    header.tellInfo:Show()
+    tellInfo()
+    if tell.waiting and ns.Voice.Owner() ~= header.recap then
+        header.recap:SetText((L["Continue (%d/%d)"]):format(tell.i + 1, #tell.keys))
+    end
     local y, n = -(54 + header.intro:GetStringHeight() + 16), 1
     local GAP = 8
 
     -- the numbers, each in its own box
     local stats = { { #ns.char.journal, L["Quests"] }, { chaptersDone, L["Chapters finished"] },
         { #people, L["People met"] }, { finished, L["Stories seen through"] } }
-    local bw = (width - GAP * 3) / 4
+    local bw = (width - GAP * (#stats - 1)) / #stats
     for i, st in ipairs(stats) do
         local b = chronGet("stat", makeStat)
         b:SetSize(bw, 50); b:SetPoint("TOPLEFT", page, "TOPLEFT", (i - 1) * (bw + GAP), y)
@@ -1355,7 +1942,7 @@ local function renderChronicle()
     y = y - 50 - 20
 
     -- the next zones on your race's road, as cards: levels, chapters done, and where you are now
-    local ahead = ns.Endings and ns.Endings.RoadAhead(nil, 3) or {}
+    local ahead = (ns.Endings and not ns.settings.hideUnfound) and ns.Endings.RoadAhead(nil, 3) or {}
     if #ahead > 0 then
         y, n = placeTodos({ L["The road ahead"] }, y, n, pw)
         local here = ns.zoneEN and ns.zoneEN(GetRealZoneText() or "")
@@ -1618,6 +2205,18 @@ local function renderList()
             r.bar:SetValue(lvl / 60)
             if r.diamond then r.count:SetText(""); r.diamond:SetAtlas("Legacy-Rewards-Tracker-Diamond"); r.chapter = nil end
         end
+        -- the Library: every book, letter and plaque this character has read (thanks Alche)
+        if filter == "" then
+            local found, total = J.LibraryCount()
+            if total > 0 then
+                local r = row("chapter")
+                card(r, "library", L["Library"], ns.settings.hideUnfound and (L["%d found"]):format(found)
+                    or (L["%d of %d found"]):format(found, total), found, total, false)
+                r.bar:SetValue(found / total)
+                r.bar:SetShown(not ns.settings.hideUnfound) -- the bar would tell how many there are
+                if r.diamond then r.count:SetText(tostring(found)); r.chapter = nil end
+            end
+        end
         -- chapters arrive grouped by zone; collect the runs first so each header knows its count
         local runs = {}
         for _, ch in ipairs(chapters) do
@@ -1664,6 +2263,19 @@ local function renderList()
                         r.check:SetShown(finished)
                         r.chapter = ch
                         r.edge:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], ch.locked and 0.15 or 0.5)
+                    end
+                end
+                -- the zone's books and notes, for collectors: how many found (click: the zone page, at its books)
+                if filter == "" then
+                    local here = J.ZoneBooks(run.zone)
+                    local found = 0
+                    for _, b in ipairs(here) do if b.found then found = found + 1 end end
+                    if #here > 0 and (found > 0 or not ns.settings.hideUnfound) then
+                        local r = row("chapter")
+                        card(r, "books:" .. run.zone, L["Books and notes"], ns.settings.hideUnfound and (L["%d found"]):format(found)
+                            or (L["%d of %d found"]):format(found, #here), found, #here, found == #here)
+                        r.bar:SetShown(not ns.settings.hideUnfound)
+                        if r.diamond then r.chapter = nil end
                     end
                 end
             end
@@ -1806,8 +2418,12 @@ function J.Refresh()
         return
     elseif tab == "story" and selected == "chronicle" then
         renderList(); renderChronicle(); showBack()
+    elseif tab == "story" and selected == "library" then
+        renderList(); renderLibrary(); showBack()
     elseif tab == "story" and selected and selected:match("^area:") then
         renderList(); renderZone(selected:sub(6)); showBack()
+    elseif tab == "story" and selected and selected:match("^books:") then
+        renderList(); renderZone(selected:sub(7)); showBack()
     elseif tab == "story" then
         local ch = findChapter(selected)
         if not ch then
@@ -1833,11 +2449,17 @@ function J.Back()
     pageScroll:SetVerticalScroll(0)
 end
 
+---@param key string?
 function J.Select(key)
     remember(key)
     selected = key
     J.Refresh()
     pageScroll:SetVerticalScroll(0)
+    if key and key:match("^books:") then -- down to the zone's books, once the page knows its height
+        C_Timer.After(0, function()
+            pageScroll:SetVerticalScroll(math.max(0, math.min(pageScroll:GetVerticalScrollRange(), J.booksAt or 0)))
+        end)
+    end
 end
 
 -- the Options and Share tabs show their page in place of the list and the parchment
@@ -1883,9 +2505,18 @@ function J.SetTab(which, keepSelection)
 end
 
 function J.OnVoiceChanged()
+    if tell.keys and not ns.Voice.IsPlaying() then -- the chronicle stopped: after a chapter (pause), or at its end
+        if ns.settings.chroniclePause and tell.i < #tell.keys then tell.waiting = true
+        else tell.keys, tell.i, tell.waiting = nil, 0, false end
+    end
     if not (frame and frame:IsShown() and header.recap) then return end
+    if tab == "story" and selected == "library" then J.Refresh() return end -- its rows say Stop while they play
     local by = ns.Voice.Owner()
     header.recap:SetText(by == header.recap and L["Stop"] or header.recap.label or L["Play recap"])
+    if header.recap.tell and tell.waiting and by ~= header.recap then
+        header.recap:SetText((L["Continue (%d/%d)"]):format(tell.i + 1, #tell.keys))
+    end
+    tellInfo()
     header.recap:SetEnabled(header.recap.anyAudio or by == header.recap)
     header.zone:SetText(by == header.zone and L["Stop"] or L["Play zone story"])
     if person.about then person.about:SetText(by == person.about and L["Stop"] or L["Who are they?"]) end
@@ -2111,6 +2742,13 @@ local function create()
     header.intro = text(page, "QuestFont", INK); header.intro:SetPoint("TOPLEFT", 0, -50); header.intro:SetSpacing(3)
     header.recap = button(page, L["Play recap"], 100); header.recap:SetPoint("TOPRIGHT", page, "TOPRIGHT", 0, 0)
     header.recap:SetScript("OnClick", function(self)
+        if self.tell then click(); J.TellChronicle(self) return end
+        if self.libraryToggle then
+            click()
+            ns.settings.libraryView = (ns.settings.libraryView or "shelves") == "shelves" and "tiles" or "shelves"
+            J.Refresh()
+            return
+        end
         toggle(self, function() ns.Voice.PlayQueue(self.keys or {}, self) end)
     end)
     header.zone = button(page, L["Play zone story"], 120); header.zone:SetPoint("TOPRIGHT", header.recap, "BOTTOMRIGHT", 0, -4)
@@ -2127,6 +2765,13 @@ local function create()
         GameTooltip:Show()
     end)
     header.overview:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    header.tellInfo = text(page, "GameFontNormalSmall", INK_SOFT); header.tellInfo:SetJustifyH("RIGHT")
+    header.tellInfo:SetPoint("TOPRIGHT", header.recap, "BOTTOMRIGHT", -2, -4)
+    local ticker = CreateFrame("Frame", nil, page)
+    ticker:SetScript("OnUpdate", function(self, elapsed)
+        self.t = (self.t or 0) + elapsed
+        if self.t > 0.5 then self.t = 0; tellInfo() end
+    end)
     header.back = button(page, L["Back"], 70)
     header.back:SetScript("OnClick", function() click(); J.Back() end)
     header.tip = text(page, "GameFontDisableSmall"); header.tip:SetJustifyH("LEFT")

@@ -61,7 +61,26 @@ local function withoutNames(text, target)
     return text
 end
 
-ev:SetScript("OnEvent", function(_, event, text, speaker, _, _, target)
+-- the one speaking, if they're on screen as your target, mouseover, focus or a nameplate: whether a man or a woman
+-- (guards and some enemies come as both, with a voice for each)
+local function speakerSexOf(guid)
+    if not guid or (canaccessvalue and not canaccessvalue(guid)) then return nil end
+    local units = { "target", "mouseover", "focus" }
+    if C_NamePlate and C_NamePlate.GetNamePlates then
+        for _, plate in ipairs(C_NamePlate.GetNamePlates() or {}) do
+            if plate.namePlateUnitToken then units[#units + 1] = plate.namePlateUnitToken end
+        end
+    end
+    for _, unit in ipairs(units) do
+        local ok, same = pcall(function() return UnitGUID(unit) == guid end)
+        if ok and same then
+            local ok2, sex = pcall(UnitSex, unit)
+            if ok2 and not (canaccessvalue and not canaccessvalue(sex)) then return sex end
+        end
+    end
+end
+
+ev:SetScript("OnEvent", function(_, event, text, speaker, _, _, target, _, _, _, _, _, _, guid)
     if not (ns.db and ns.settings.worldSpeech) then return end
     text, speaker = ns.clean(text), ns.clean(speaker)
     if type(text) ~= "string" or type(speaker) ~= "string" or text == "" then return end
@@ -77,7 +96,9 @@ ev:SetScript("OnEvent", function(_, event, text, speaker, _, _, target)
     bubbled[key] = (event == "CHAT_MSG_MONSTER_SAY" or event == "CHAT_MSG_MONSTER_YELL")
         and GetCVarBool and GetCVarBool("chatBubbles") or false
     ns.Voice.SetText(key, text)
+    ns.Voice.SetSpeakerSex(speakerSexOf(guid))
     ns.Voice.Play(key)
+    ns.Voice.SetSpeakerSex(nil)
 end)
 for _, e in ipairs({ "CHAT_MSG_MONSTER_SAY", "CHAT_MSG_MONSTER_YELL", "CHAT_MSG_MONSTER_WHISPER", "CHAT_MSG_RAID_BOSS_WHISPER" }) do
     pcall(ev.RegisterEvent, ev, e)

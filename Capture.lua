@@ -5,6 +5,22 @@ local _, ns = ...
 local clean = ns.clean
 local ev = CreateFrame("Frame")
 
+-- The NPC's body (a model file number): new WoW: Forever NPCs come without a race, and the model says which it is
+-- ("character/tauren/female"), so their voice can fit. Read through a hidden model frame.
+local probe
+local function modelOf(unit)
+    if not probe then
+        local ok, f = pcall(CreateFrame, "PlayerModel", nil, UIParent)
+        if not ok or not f then return nil end
+        probe = f
+        probe:SetSize(1, 1); probe:SetPoint("TOPLEFT", UIParent, "BOTTOMRIGHT", 100, -100); probe:SetAlpha(0)
+    end
+    local ok = pcall(probe.SetUnit, probe, unit)
+    if not ok or not probe.GetModelFileID then return nil end
+    local ok2, id = pcall(probe.GetModelFileID, probe)
+    return ok2 and clean(id) or nil
+end
+
 local function npcInfo()
     for _, unit in ipairs({ "questnpc", "npc" }) do
         -- a party member sharing a quest is "questnpc" too: never record players
@@ -21,6 +37,7 @@ local function npcInfo()
                 kind = kind,                         -- Creature, Vehicle, GameObject, ...
                 sex = clean(UnitSex(unit)),          -- 1 unknown, 2 male, 3 female
                 creature = clean(UnitCreatureType(unit)),
+                model = modelOf(unit),
             }
         end
     end
@@ -173,6 +190,7 @@ local function onGreeting(kind)
         -- a greeting nobody has voiced yet (new NPC, or new text): keep it for /lore share and the next release
         local g = ns.db.greetings[npc.npcID] or {}
         g.name, g.sex, g.creature, g.kind, g.text = npc.name, npc.sex, npc.creature, npc.kind, text
+        g.model = npc.model
         g.zone = where()
         g.by = reader()
         ns.db.greetings[npc.npcID] = g

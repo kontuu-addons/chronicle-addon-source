@@ -48,4 +48,5 @@ Holiday.lua
 Campfire.lua
 Map.lua
 StoryLog.lua
+Hint.lua
 MapPin.xml

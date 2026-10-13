@@ -365,6 +365,7 @@ local function zoneStory(zone, started)
         end
     end
     if s.starts then table.sort(s.starts, function(x, y) return (x.lvl or 99) < (y.lvl or 99) end) end
+    if ns.settings.hideUnfound then s.hidden, s.starts = 0, nil end -- nothing about what isn't found yet
     s.total = #s.chapters + s.hidden
     return s
 end

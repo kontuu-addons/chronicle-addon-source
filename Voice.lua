@@ -12,8 +12,27 @@ local function clearTimer()
     if timer then timer:Cancel(); timer = nil end
 end
 
+-- Guards, grunts, townsfolk and some enemies come as men and women under one NPC: their lines are also recorded
+-- in the other voice (key .. ":w" a woman's, key .. ":m" a man's), played when the one speaking is that sex: the
+-- NPC you're talking to, or for speech in the world the speaker World speech found on screen (V.SetSpeakerSex).
+local speakerSex
+function V.SetSpeakerSex(sex) speakerSex = sex end
+
+local function sexOf(unit)
+    if not UnitExists(unit) then return nil end
+    local ok, sex = pcall(UnitSex, unit)
+    if not ok or (canaccessvalue and not canaccessvalue(sex)) then return nil end
+    return sex
+end
+
 function V.Get(key)
     if not key or ns.settings.journalOnly then return nil end -- journal only: every line counts as unvoiced
+    local sex = speakerSex or sexOf("npc")
+    local other = (sex == 3 and ":w") or (sex == 2 and ":m") or nil
+    if other then
+        local e = (ns.female and ns.audio[key .. ":f" .. other]) or ns.audio[key .. other]
+        if e then return e end
+    end
     return (ns.female and ns.audio[key .. ":f"]) or ns.audio[key]
 end
 
