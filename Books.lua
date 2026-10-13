@@ -85,6 +85,26 @@ ev:SetScript("OnEvent", function(_, event)
 end)
 for _, e in ipairs({ "ITEM_TEXT_READY", "ITEM_TEXT_CLOSED" }) do pcall(ev.RegisterEvent, ev, e) end
 
+-- books read before the Library existed are only in "heard": put them on the shelf too (time unknown: 0, so they
+-- sort after the ones read since)
+table.insert(ns.onLogin, function()
+    local heard, books = ns.char and ns.char.heard, ns.Lore and ns.Lore.books
+    if not (heard and books) then return end
+    ns.char.library = ns.char.library or {}
+    -- a page shared by several titles (the same text on different objects) can't tell which one was read
+    local titlesOf = {}
+    for _, pages in pairs(books) do
+        for _, page in ipairs(pages) do titlesOf[page[1]] = (titlesOf[page[1]] or 0) + 1 end
+    end
+    for title, pages in pairs(books) do
+        if not ns.char.library[title] then
+            for _, page in ipairs(pages) do
+                if heard[page[1]] and titlesOf[page[1]] == 1 then ns.char.library[title] = 0; break end
+            end
+        end
+    end
+end)
+
 table.insert(ns.onLogin, function()
     if not ItemTextFrame then return end
     btn = CreateFrame("Button", nil, ns.Overlay(ItemTextFrame), "UIPanelButtonTemplate")
