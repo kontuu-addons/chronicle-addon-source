@@ -109,6 +109,9 @@ local function broker()
     return DBI
 end
 
+-- the book itself, when it is on screen (the tour points at it)
+function M.Button() return btn and btn:IsVisible() and btn or nil end
+
 function M.Update()
     if brokered == false then
         local ok, dbi = pcall(broker)

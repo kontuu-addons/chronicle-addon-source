@@ -65,7 +65,7 @@ ev:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_CONTROL_LOST" then
         C_Timer.After(1.5, onFlight) -- UnitOnTaxi turns true a moment after take-off
     elseif event == "PLAYER_ALIVE" then
-        C_Timer.After(2, onGhost) -- fires when you release your spirit
+        C_Timer.After(8, onGhost) -- fires when you release your spirit; a few seconds in, once you are on your way back
     end
 end)
 table.insert(ns.onLogin, function()

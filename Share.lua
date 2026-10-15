@@ -122,6 +122,10 @@ function S.Build(opts)
     if not opts.sync and ns.db.lastBoss and next(ns.db.lastBoss) then
         data.lastBoss = ns.db.lastBoss -- the last boss groups kill in each dungeon: when its ending plays
     end
+    if not opts.sync and ns.english and ns.db.areas and next(ns.db.areas) then
+        data.areas = ns.db.areas -- named places nobody has a line for yet: zone and name, to write and voice one
+        for _, places in pairs(ns.db.areas) do for _ in pairs(places) do n = n + 1 end end
+    end
     if not opts.sync and ns.db.reports and #ns.db.reports > 0 then
         data.reports = ns.db.reports -- /lore report notes: which line was wrong and why
         n = n + #ns.db.reports

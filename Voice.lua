@@ -655,6 +655,12 @@ end
 -- ---------------------------------------------------------------- play/stop button on the quest window
 local btn, marker, recapBtn, listenTab, recapTab
 local ICON_LISTEN, ICON_STOP = "Interface\\Icons\\Ability_Warrior_BattleShout", "Interface\\Icons\\Spell_Holy_Silence"
+-- the quest window's Listen, as a button or a side tab, while it is on screen (the tour's tip points at it)
+function V.ListenButton()
+    if btn and btn:IsVisible() then return btn end
+    if listenTab and listenTab:IsVisible() then return listenTab end
+end
+
 function V.UpdateQuestButton()
     if not btn then return end
     local has = ns.lastKey and V.Get(ns.lastKey)

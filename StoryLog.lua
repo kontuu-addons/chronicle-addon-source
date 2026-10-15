@@ -147,10 +147,13 @@ local function create(host)
     p.journal:SetScript("OnClick", function(b) if b.chapter then ns.Journal.Open(b.chapter) end end)
     -- Quest hints (option): where this quest's objectives are, on the map
     p.hint = CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
-    p.hint:SetSize(60, 20); ns.FitButton(p.hint)
+    p.hint:SetSize(76, 20); ns.FitButton(p.hint) -- room for "Hide hint"
     p.hint:SetPoint("LEFT", p.journal, "RIGHT", 4, 0)
     p.hint:SetText(L["Hint"])
-    p.hint:SetScript("OnClick", function(b) if b.quest and ns.Hint then ns.Hint.Show(b.quest) end end)
+    p.hint:SetScript("OnClick", function(b)
+        if not (b.quest and ns.Hint) then return end
+        if ns.Hint.IsActive(b.quest) then ns.Hint.Restore() else ns.Hint.Show(b.quest) end -- a second click turns it off
+    end)
     p:Hide()
     return p
 end
@@ -185,6 +188,7 @@ local function update()
     panel.play:SetText(ns.Voice.Owner() == panel.play and L["Stop"] or L["Play recap"])
     panel.hint.quest = id
     panel.hint:SetShown(ns.Hint and ns.Hint.Available(id) or false)
+    panel.hint:SetText(ns.Hint and ns.Hint.IsActive(id) and L["Hide hint"] or L["Hint"])
     panel:Show()
 end
 

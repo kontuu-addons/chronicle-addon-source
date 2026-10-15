@@ -31,6 +31,9 @@ local function restore()
     end
 end
 H.Restore = restore
+
+-- is this quest's hint on right now (the button then says Hide hint)
+function H.IsActive(questID) return active ~= nil and active.quest == questID end
 table.insert(ns.onLogin, restore)
 
 -- the map closing, or its quest page closing, ends the hint (watched, no hooks on the game's windows)

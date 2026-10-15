@@ -249,6 +249,7 @@ local function build()
         function() return ns.settings.journalScale or 1 end, function(v) if ns.Journal.SetScale then ns.Journal.SetScale(v) end end,
         function(v) return math.floor(v * 100 + 0.5) .. "%" end, function() return true end)
     box("zoneIntro", L["Welcome to new zones"], L["The first time you enter a zone, a short introduction to it. Click Listen to hear the narrator read it."])
+    box("areaIntros", L["Tell me about new places"], L["The first time you walk into a named place inside a zone, like a village or a ruin, the narrator says a line or two about it. Only when nobody else is talking."])
     box("zoneRecap", L["\"Previously in...\" reminders"], L["After 30 minutes or more away, offers the narrator's recap of what you last did there."])
     box("logStory", L["The story so far in the quest log"], L["When you select a quest that belongs to a chapter, a small panel beside the quest log shows the chapter, your step and a recap of what happened last. Never anything you have not done yet."])
     box("tips", L["Tips in the journal"], L["A short tip about what Chronicle can do, under a chapter in the journal."])

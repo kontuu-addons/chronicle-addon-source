@@ -69,6 +69,8 @@ local function about(key)
         return "Reading"
     elseif kind == "react" then
         return ""
+    elseif kind == "area" then
+        return id:match(":(.+)$") or ""
     elseif key:match("^q%d+") then
         local t = questTitle(key:match("^q(%d+)"))
         return t and (L["Quest: %s"]):format(t) or ""
@@ -202,26 +204,87 @@ local function create()
         btn.text:SetPoint("CENTER"); btn.text:SetText(label)
         btn.color = { r, g, b }
         btn.verdict = verdict
-        btn:SetScript("OnClick", function()
+        -- Bad: a few fixed reasons, one click each, and "Something else..." for a note of your own. Fixed reasons are
+        -- quicker to give and show patterns, like a voice that is always too high (thanks BuzzTea)
+        local REASONS = {
+            { "voice", L["Wrong voice for this character"] },
+            { "high", L["Voice too high"] },
+            { "low", L["Voice too low"] },
+            { "mood", L["Doesn't fit the moment"] },
+            { "word", L["A word said wrong"] },
+            { "text", L["Doesn't match the text"] },
+        }
+        local function askNote(key)
+            StaticPopupDialogs.CHRONICLE_BADLINE = StaticPopupDialogs.CHRONICLE_BADLINE or {
+                text = L["What was wrong with this line? (optional)"],
+                button1 = L["Report"], button2 = CANCEL,
+                hasEditBox = true, maxLetters = 120, timeout = 0, whileDead = true, hideOnEscape = true,
+                OnAccept = function(self, k)
+                    local box = self.editBox or self.EditBox
+                    ns.MarkLine(k, "bad", box and box:GetText())
+                    T.UpdateMarks()
+                end,
+                EditBoxOnEnterPressed = function(self)
+                    local p = self:GetParent()
+                    StaticPopupDialogs.CHRONICLE_BADLINE.OnAccept(p, p.data)
+                    p:Hide()
+                end,
+            }
+            StaticPopup_Show("CHRONICLE_BADLINE", nil, nil, key)
+        end
+        -- the reasons in a small list of our own: the game's context menu, opened from this window, crashed the client
+        -- (an assertion in Blizzard_Menu's AcquireMenu)
+        local list
+        local function showReasons(owner, key)
+            if not list then
+                list = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+                list:SetFrameStrata("DIALOG")
+                list:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+                list:SetBackdropColor(0.07, 0.055, 0.04, 0.97); list:SetBackdropBorderColor(0.6, 0.48, 0.25, 1)
+                list:EnableMouse(true)
+                local title = list:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                title:SetPoint("TOPLEFT", 10, -8); title:SetText(L["What was wrong?"])
+                list.rows = {}
+                local all = {}
+                for _, reason in ipairs(REASONS) do all[#all + 1] = reason end
+                all[#all + 1] = { "other", L["Something else..."] }
+                local width = 120
+                for i, choice in ipairs(all) do
+                    local row = CreateFrame("Button", nil, list)
+                    row:SetHeight(18)
+                    row:SetPoint("TOPLEFT", 6, -8 - 14 - (i - 1) * 18); row:SetPoint("RIGHT", -6, 0)
+                    row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                    row.text:SetPoint("LEFT", 4, 0); row.text:SetText(choice[2])
+                    width = math.max(width, row.text:GetStringWidth() + 28)
+                    local hl = row:CreateTexture(nil, "HIGHLIGHT")
+                    hl:SetAllPoints(); hl:SetColorTexture(1, 0.85, 0.5, 0.15)
+                    row.reason = choice[1]
+                    row:SetScript("OnClick", function(self)
+                        list:Hide()
+                        if self.reason == "other" then askNote(list.key) return end
+                        ns.MarkLine(list.key, "bad", nil, self.reason)
+                        T.UpdateMarks()
+                    end)
+                    list.rows[i] = row
+                end
+                list:SetSize(width, 8 + 14 + #all * 18 + 8)
+                -- closes when the mouse has been away from it for a moment
+                list:SetScript("OnUpdate", function(self, el)
+                    self.away = self:IsMouseOver() and 0 or (self.away or 0) + el
+                    if self.away > 1.5 then self:Hide() end
+                end)
+                list:SetScript("OnShow", function(self) self.away = 0 end)
+            end
+            list.key = key
+            list:ClearAllPoints()
+            list:SetPoint("BOTTOMRIGHT", owner, "TOPRIGHT", 0, 4)
+            list:Show()
+        end
+        btn:SetScript("OnClick", function(self)
             local key = currentKey
             if not key then return end
             if verdict == "bad" then
-                StaticPopupDialogs.CHRONICLE_BADLINE = StaticPopupDialogs.CHRONICLE_BADLINE or {
-                    text = L["What was wrong with this line? (optional)"],
-                    button1 = L["Report"], button2 = CANCEL,
-                    hasEditBox = true, maxLetters = 120, timeout = 0, whileDead = true, hideOnEscape = true,
-                    OnAccept = function(self, k)
-                        local box = self.editBox or self.EditBox
-                        ns.MarkLine(k, "bad", box and box:GetText())
-                        T.UpdateMarks()
-                    end,
-                    EditBoxOnEnterPressed = function(self)
-                        local p = self:GetParent()
-                        StaticPopupDialogs.CHRONICLE_BADLINE.OnAccept(p, p.data)
-                        p:Hide()
-                    end,
-                }
-                StaticPopup_Show("CHRONICLE_BADLINE", nil, nil, key)
+                showReasons(self, key)
             else
                 ns.MarkLine(key, "good")
                 T.UpdateMarks()
@@ -411,7 +474,7 @@ function T.Show(entry, key)
         f.icon:SetTexture("Interface\\Icons\\INV_Misc_Book_09"); f.icon:Show()
         -- recaps and chapters tell the story; quest text from a poster or an item, books and plaques are read out
         local k = key or ""
-        local zone = k:match("^zone:(.+)") or k:match("^dng:(.+)") or k:match("^epi:([^|]+)") or k:match("^dend:([^:|]+)")
+        local zone = k:match("^zone:(.+)") or k:match("^area:([^:]+):") or k:match("^dng:(.+)") or k:match("^epi:([^|]+)") or k:match("^dend:([^:|]+)")
         local tale = k:match("^tale:(.+)")
         local attId, att = k:match("^att:(.+)"), nil
         local bioId = tonumber(k:match("^bio:(%d+)$") or "")
@@ -442,6 +505,8 @@ function T.Show(entry, key)
     f.about:SetText(about(key))
     -- subtitles: long text is shown a page at a time, in step with the voice
     local text = subtitle
+    -- cinematic: a row of its own under the words for the Good / Bad buttons, so they don't cover the last line
+    local marks = (f.cine and ns.settings.checkVoices) and 20 or 0
     if not compact then
         pages = paginate(text:gsub("[\r\n]+", " "))
         page = 1
@@ -456,13 +521,13 @@ function T.Show(entry, key)
         end
         f.sub:SetText(pages[1].text)
         f.sub:Show()
-        f:SetHeight(f.cine and (10 + f.name:GetStringHeight() + 3 + f.about:GetStringHeight() + 8 + tallest + 16)
+        f:SetHeight(f.cine and (10 + f.name:GetStringHeight() + 3 + f.about:GetStringHeight() + 8 + tallest + 16 + marks)
             or math.max(104, 74 + tallest + 22))
     else
         pages = nil
         f.sub:SetText("")
         f.sub:Hide()
-        f:SetHeight(f.cine and (10 + f.name:GetStringHeight() + 3 + f.about:GetStringHeight() + 14) or 76)
+        f:SetHeight(f.cine and (10 + f.name:GetStringHeight() + 3 + f.about:GetStringHeight() + 14 + marks) or 76)
     end
     f.progress:SetValue(0)
     T.UpdateMarks()
@@ -504,6 +569,9 @@ function T.Undock()
     f.dockedTo = nil
     backToSaved()
 end
+
+-- the speaker window, while it is up (the tour points at it)
+function T.Frame() return f and f:IsShown() and f or nil end
 
 function T.Hide(now)
     lingerToken = lingerToken + 1

@@ -412,6 +412,73 @@ local function text(parent, font, color)
 end
 
 -- left list: zone headers and chapter / person rows
+-- The story list's zones in your own order, and the ones you put away (per character). ns.char.zoneOrder lists zones
+-- in the order you arranged them; zones not in it (new ones) come first, as they always did.
+local HIDDEN = "\001hidden" -- the "Hidden" group's own heading
+
+-- put a zone at the place of another one (dragging a heading onto another), or at the top
+function J.MoveZone(zone, before)
+    local order = {}
+    for _, z in ipairs(J.visibleZones or {}) do if z ~= zone then order[#order + 1] = z end end
+    local to = 1
+    for i, z in ipairs(order) do if z == before then to = i end end
+    if before and before ~= zone then
+        -- dropped on a heading further down: it goes after that one, further up: before it
+        for i, z in ipairs(J.visibleZones or {}) do
+            if z == zone then for k, y in ipairs(J.visibleZones) do if y == before and k > i then to = to + 1 end end end
+        end
+    end
+    table.insert(order, before and to or 1, zone)
+    ns.char.zoneOrder = order
+    J.Refresh()
+end
+
+local zoneMenu
+function J.ZoneMenu(owner)
+    local zone, c = owner.zone, ns.char
+    c.zoneHidden = c.zoneHidden or {}
+    local hidden = c.zoneHidden[zone]
+    local items = hidden and { { L["Show"], function() c.zoneHidden[zone] = nil; J.Refresh() end } } or {
+        { L["Move to top"], function() J.MoveZone(zone, nil) end },
+        { L["Hide"], function() c.zoneHidden[zone] = true; J.Refresh() end },
+    }
+    -- a small list of our own (the game's context menu crashed the client from one of our windows)
+    if not zoneMenu then
+        zoneMenu = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+        zoneMenu:SetFrameStrata("DIALOG")
+        zoneMenu:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+        zoneMenu:SetBackdropColor(0.07, 0.055, 0.04, 0.97); zoneMenu:SetBackdropBorderColor(0.6, 0.48, 0.25, 1)
+        zoneMenu:EnableMouse(true)
+        zoneMenu.rows = {}
+        zoneMenu:SetScript("OnUpdate", function(self, el)
+            self.away = self:IsMouseOver() and 0 or (self.away or 0) + el
+            if self.away > 1.5 then self:Hide() end
+        end)
+        zoneMenu:SetScript("OnShow", function(self) self.away = 0 end)
+    end
+    local width = 110
+    for i, it in ipairs(items) do
+        local row = zoneMenu.rows[i]
+        if not row then
+            row = CreateFrame("Button", nil, zoneMenu)
+            row:SetHeight(18)
+            row:SetPoint("TOPLEFT", 6, -6 - (i - 1) * 18); row:SetPoint("RIGHT", -6, 0)
+            row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); row.text:SetPoint("LEFT", 4, 0)
+            local hl = row:CreateTexture(nil, "HIGHLIGHT"); hl:SetAllPoints(); hl:SetColorTexture(1, 0.85, 0.5, 0.15)
+            zoneMenu.rows[i] = row
+        end
+        row.text:SetText(it[1])
+        width = math.max(width, row.text:GetStringWidth() + 28)
+        row:SetScript("OnClick", function() zoneMenu:Hide(); click(); it[2]() end)
+        row:Show()
+    end
+    for i = #items + 1, #zoneMenu.rows do zoneMenu.rows[i]:Hide() end
+    zoneMenu:SetSize(width, 12 + #items * 18)
+    zoneMenu:ClearAllPoints()
+    zoneMenu:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 20, 4)
+    zoneMenu:Show()
+end
+
 local function getListRow(i)
     local r = listRows[i]
     if r then return r end
@@ -480,8 +547,54 @@ local function getListRow(i)
     r.foldBtn:SetSize(14, 14); r.foldBtn:SetPoint("LEFT", 8, 0)
     r.foldBtn:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilight", "ADD")
     r.foldBtn:SetScript("OnClick", function() click(); fold(r) end)
-    r:SetScript("OnClick", function(self)
+    -- drag a zone heading onto another to put it there (story tab)
+    r:RegisterForDrag("LeftButton")
+    r:SetScript("OnDragStart", function(self)
+        if self.kind == "head" and self.which == "story" and self.zone and self.zone ~= HIDDEN
+            and not (ns.char.zoneHidden or {})[self.zone] then
+            J.dragging = self.zone
+            self:SetAlpha(0.5)
+        end
+    end)
+    r:SetScript("OnDragStop", function(self)
+        self:SetAlpha(1)
+        J.dragEnded = GetTime() -- a drag is never also a click that folds the zone
+        local zone = J.dragging
+        J.dragging = nil
+        if not zone then return end
+        for _, o in pairs(listRows) do
+            if o:IsShown() and o.kind == "head" and o.which == "story" and o.zone and o.zone ~= HIDDEN and o:IsMouseOver() then
+                if o.zone ~= zone and not (ns.char.zoneHidden or {})[o.zone] then J.MoveZone(zone, o.zone) end
+                return
+            end
+        end
+    end)
+    -- a zone heading on the story tab says what it can do
+    r:HookScript("OnEnter", function(self)
+        if not (self.kind == "head" and self.which == "story" and self.zone) or J.dragging then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(self.zone == HIDDEN and L["Hidden"] or ns.zoneLocal(self.zone))
+        GameTooltip:AddLine(L["Click: fold or unfold"], 0.8, 0.8, 0.8)
+        if self.zone == HIDDEN then
+            GameTooltip:AddLine(L["Right-click a zone in here to show it again"], 0.8, 0.8, 0.8)
+        elseif (ns.char.zoneHidden or {})[self.zone] then
+            GameTooltip:AddLine(L["Right-click: show it again"], 0.8, 0.8, 0.8)
+        else
+            GameTooltip:AddLine(L["Drag onto another zone: move it there"], 0.8, 0.8, 0.8)
+            GameTooltip:AddLine(L["Right-click: move to top or hide"], 0.8, 0.8, 0.8)
+        end
+        GameTooltip:Show()
+    end)
+    r:HookScript("OnLeave", function() GameTooltip:Hide() end)
+    r:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    r:SetScript("OnClick", function(self, mouse)
+        if J.dragEnded and GetTime() - J.dragEnded < 0.3 then return end
         click()
+        if mouse == "RightButton" then
+            -- a zone heading on the story tab: move it, pin it to the top, or hide it (thanks Alche)
+            if self.kind == "head" and self.which == "story" and self.zone and self.zone ~= HIDDEN then J.ZoneMenu(self) end
+            return
+        end
         if self.kind == "chapter" then J.Select(self.key) elseif self.kind == "person" then J.ShowPerson(self.key)
         elseif self.kind == "head" and self.zone then
             fold(self)
@@ -544,6 +657,7 @@ local TIPS = {
     "/lore welcome shows a zone's introduction again, and capital cities have one too.",
     "Finish most of a zone's story and its epilogue is added at the end of Play story.",
     "Select a quest in your quest log to see where it stands in its chapter.",
+    "Drag a zone heading in the list onto another to change the order, or right-click it to move it to the top or hide it.",
     "Found a new Forever quest with no voice? /lore share, then paste it on the Chronicle Discord, and it gets voiced in an update.",
 }
 local tipIndex = math.random(#TIPS)
@@ -2227,11 +2341,42 @@ local function renderList()
                 last.list[#last.list + 1] = ch
             end
         end
+        -- your own order (dragged or moved to the top); zones you never placed keep their place before the rest.
+        -- Hidden ones go last, under a folded "Hidden" heading.
+        local hiddenSet = ns.char.zoneHidden or {}
+        local rank = {}
+        for i, z in ipairs(ns.char.zoneOrder or {}) do rank[z] = i end
+        for i, run in ipairs(runs) do run.natural = i end
+        table.sort(runs, function(a, b)
+            local ha, hb = hiddenSet[a.zone] and 1 or 0, hiddenSet[b.zone] and 1 or 0
+            if ha ~= hb then return ha < hb end
+            local ra, rb = rank[a.zone], rank[b.zone]
+            if (ra ~= nil) ~= (rb ~= nil) then return ra == nil end -- new zones first, as always
+            if ra and rb and ra ~= rb then return ra < rb end
+            return a.natural < b.natural
+        end)
+        J.visibleZones = {}
+        local hiddenCount, hiddenOpen = 0, false
+        for _, run in ipairs(runs) do
+            if hiddenSet[run.zone] then hiddenCount = hiddenCount + 1 else J.visibleZones[#J.visibleZones + 1] = run.zone end
+        end
+        local headerShown = false
         for i, run in ipairs(runs) do
+            if hiddenSet[run.zone] and not headerShown then
+                headerShown = true
+                hiddenOpen = zoneOpen("story", HIDDEN, 0, false)
+                local h = row("head")
+                zoneHeader(h, "story", HIDDEN, hiddenCount, hiddenOpen)
+                h.head:SetText((L["%s  |cff8a6d45(%d)|r"]):format(L["Hidden"]:upper(), hiddenCount))
+            end
             local holds = false
             for _, ch in ipairs(run.list) do if ch.key == selected then holds = true end end
             local open = zoneOpen("story", run.zone, i, holds)
-            zoneHeader(row("head"), "story", run.zone, #run.list, open)
+            if not (hiddenSet[run.zone] and not hiddenOpen) then
+                zoneHeader(row("head"), "story", run.zone, #run.list, open)
+            else
+                open = false
+            end
             if open then
                 for _, ch in ipairs(run.list) do
                     local r = row("chapter")

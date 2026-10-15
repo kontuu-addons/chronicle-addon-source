@@ -30,6 +30,14 @@ local function update()
 end
 B.Update = update
 
+-- DialogueUI's own book window is on (it reads books instead of the game's window)
+local function dialogueBooks()
+    if not (C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("DialogueUI")) then return false end
+    local db = _G.DialogueUI_DB -- its option "BookUIEnabled", on unless the player turned it off
+    return not (type(db) == "table" and db.BookUIEnabled == false)
+end
+local wholeBook, bookTimer
+
 local function onPage()
     local title = ns.clean(ItemTextGetItem and ItemTextGetItem())
     local text = ns.clean(ItemTextGetText and ItemTextGetText())
@@ -63,6 +71,24 @@ local function onPage()
         b.by = { class = ns.clean(class), name = ns.clean(UnitName("player")) }
         ns.db.books[title] = b
         if ns.settings.books and ns.settings.ttsFallback then ns.Voice.Speak(text, false) end
+    elseif current and ns.settings.books and ns.Voice.Get(current) and dialogueBooks() then
+        -- DialogueUI's book window turns through every page at once to keep the whole book: wait for that to settle,
+        -- then read the book from its first page, in order (each page started on its own and only the last one was
+        -- left; thanks Alche)
+        wholeBook = title
+        if not bookTimer then
+            bookTimer = C_Timer.NewTimer(0.4, function()
+                bookTimer = nil
+                local keys = {}
+                for _, item in ipairs(known or {}) do
+                    if ns.Voice.Get(item[1]) and keys[#keys] ~= item[1] then keys[#keys + 1] = item[1] end
+                end
+                local heard = ns.char.heard
+                if wholeBook ~= title or #keys == 0 or (ns.settings.skipHeard and heard[keys[1]]) then return end
+                for _, k in ipairs(keys) do heard[k] = true end
+                ns.Voice.PlayQueue(keys)
+            end)
+        end
     elseif current and ns.settings.books and ns.Voice.Get(current) then
         local heard = ns.char.heard
         if not (ns.settings.skipHeard and heard[current]) then
@@ -93,7 +119,7 @@ function makeButton()
     if btn or not ItemTextFrame then return end
     btn = CreateFrame("Button", nil, ns.Overlay(ItemTextFrame), "UIPanelButtonTemplate")
     btn:SetSize(70, 20); ns.FitButton(btn)
-    btn:SetPoint("TOPRIGHT", ItemTextFrame, "TOPRIGHT", -30, -30)
+    btn:SetPoint("TOPLEFT", ItemTextFrame, "TOPLEFT", 64, -30) -- left of the page number: the next-page arrow sits on the right
     btn:SetScript("OnClick", function()
         if current and ns.Voice.PlayingKey() == current then ns.Voice.Stop()
         elseif current then ns.Voice.Play(current) end

@@ -84,6 +84,7 @@ local DEFAULTS = {
     minimapFree = false, -- the button anywhere on the screen instead of on the minimap edge
     zoneRecap = true,    -- "Previously in <zone>" when returning to a zone
     zoneIntro = true,    -- "Welcome to <zone>" the first time you enter a zone
+    areaIntros = true,   -- a line about a named place in a zone (Bloodhoof Village) the first time you enter it
     skipHeard = true,    -- don't auto-play a line this character has already heard
     greetings = true,    -- voice NPC greetings (gossip window / quest greeting)
     greetCooldown = 10,  -- minutes before the same greeting plays again (0 = every time)
@@ -451,17 +452,18 @@ end
 -- ---------------------------------------------------------------- checking the voices
 -- ns.db.checks[key] = "good" or "bad" for every line someone has listened to on purpose (account-wide).
 -- Bad lines also go into ns.db.reports, which /lore share sends in.
-function ns.Report(key, note)
+-- reason: one of the Bad button's fixed choices (voice, high, low, mood, word, text), or nil with a note of your own
+function ns.Report(key, note, reason)
     ns.db.reports = ns.db.reports or {}
-    table.insert(ns.db.reports, { key = key, note = (note and note ~= "") and note or nil, t = time() })
+    table.insert(ns.db.reports, { key = key, note = (note and note ~= "") and note or nil, reason = reason, t = time() })
 end
 
-function ns.MarkLine(key, verdict, note)
+function ns.MarkLine(key, verdict, note, reason)
     if not key then return end
     ns.db.checks = ns.db.checks or {}
     ns.db.checks[key] = verdict
     if verdict == "bad" then
-        ns.Report(key, note)
+        ns.Report(key, note, reason)
     elseif ns.db.reports then -- marked good after all: drop the earlier report
         for i = #ns.db.reports, 1, -1 do
             if ns.db.reports[i].key == key then table.remove(ns.db.reports, i) end
@@ -570,6 +572,8 @@ SlashCmdList.CHRONICLE = function(msg)
         end
     elseif cmd == "share" then
         ns.Share.Open()
+    elseif cmd == "tour" then
+        ns.Tour.Start()
     elseif cmd == "options" or cmd == "config" then
         ns.Options.Open()
     elseif toggles[cmd] then
@@ -601,5 +605,6 @@ SlashCmdList.CHRONICLE = function(msg)
         ns.pr(L["/lore options  settings (voice, volume, alt-tab sound)"])
         ns.pr(L["/lore voice | stoponclose  toggle settings"])
         ns.pr(L["/lore status  what has been recorded and voiced"])
+        ns.pr(L["/lore tour  a short tour of Chronicle"])
     end
 end

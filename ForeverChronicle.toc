@@ -46,6 +46,8 @@ API.lua
 Endings.lua
 Holiday.lua
 Campfire.lua
+Tour.lua
+Areas.lua
 Map.lua
 StoryLog.lua
 Hint.lua
