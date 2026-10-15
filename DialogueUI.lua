@@ -38,7 +38,7 @@ local provider = {
         local k, t = ns.Voice.PlayingKey() or "", ns.Voice.PlayingFor()
         if not t or t < 0.5 then return end
         -- DialogueUI also calls this when its window closes ("TTS Auto Stop", on even with its own TTS off): that is
-        -- Chronicle's own option ("Stop when the window closes"), not a stop for the speaker button
+        -- Chronicle's own option ("Stop when the window closes"), not a stop for the speaker button (thanks Pylo)
         local window = rawget(_G, "DUIQuestFrame")
         if window and not window:IsShown() and not ns.settings.stopOnClose then return end
         if k:match("^q%d") or k:match("^gos:") or k:match("^qg:") then ns.Voice.Skip() end

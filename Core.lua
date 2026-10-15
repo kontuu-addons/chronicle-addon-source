@@ -17,7 +17,38 @@ _G.ChronicleBinding_PlayStop = function()
     local key = V.LastKey() or ns.lastKey -- the last line heard, or the quest window's line
     if key then V.Play(key) end
 end
-_G.ChronicleBinding_Skip = function() if ns.Voice then ns.Voice.Skip() end end
+-- Playing with a controller: its back button is Escape, so Chronicle's small windows close with it then. Only while a
+-- gamepad is on: with mouse and keyboard, Escape goes straight to the game menu as before.
+local padFrames = {}
+local function padOn()
+    if GetCVar and GetCVar("GamePadEnable") ~= "1" then return false end
+    local ok, ids = pcall(function() return C_GamePad and C_GamePad.GetAllDeviceIDs and C_GamePad.GetAllDeviceIDs() end)
+    return not (ok and type(ids) == "table" and #ids == 0) -- no list to ask: trust the setting
+end
+ns.PadOn = padOn
+local function updatePadClose()
+    local on = padOn()
+    for name in pairs(padFrames) do
+        local at
+        for i, n in ipairs(UISpecialFrames) do if n == name then at = i end end
+        if on and not at then tinsert(UISpecialFrames, name) elseif not on and at then table.remove(UISpecialFrames, at) end
+    end
+end
+function ns.PadClose(name)
+    padFrames[name] = true
+    updatePadClose()
+end
+local padWatch = CreateFrame("Frame")
+for _, e in ipairs({ "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "CVAR_UPDATE", "PLAYER_LOGIN" }) do
+    pcall(padWatch.RegisterEvent, padWatch, e)
+end
+padWatch:SetScript("OnEvent", updatePadClose)
+
+-- Skip: the next line; with nothing playing it closes the speaker window (no mouse needed on a controller)
+_G.ChronicleBinding_Skip = function()
+    if ns.Voice and ns.Voice.IsPlaying() then ns.Voice.Skip()
+    elseif ns.TalkingHead then ns.TalkingHead.Hide(true) end
+end
 _G.ChronicleBinding_Journal = function() if ns.Journal then ns.Journal.Toggle() end end
 
 -- The minimap's addon compartment (the TOC names these): left-click the journal, right-click the options.
@@ -158,6 +189,9 @@ end
 -- touches the window at all: one watcher of our own looks every tenth of a second whether it is open, and
 -- shows the layer (same place, drawn just above it) or hides it.
 local layers = {}
+-- the layer sits one strata above its window: a "toplevel" window (the book's) is raised over everything at its own
+-- strata when it opens or is clicked, which covered the layer (the Listen button only showed as the book closed)
+local ABOVE = { BACKGROUND = "LOW", LOW = "MEDIUM", MEDIUM = "HIGH", HIGH = "DIALOG" }
 local watch = CreateFrame("Frame")
 local wait = 0
 watch:SetScript("OnUpdate", function(_, dt)
@@ -167,7 +201,8 @@ watch:SetScript("OnUpdate", function(_, dt)
     for o, target in pairs(layers) do
         local open = target:IsVisible()
         if open and not o:IsShown() then
-            o:SetFrameStrata(target:GetFrameStrata())
+            local strata = target:GetFrameStrata()
+            o:SetFrameStrata(ABOVE[strata] or strata)
             o:SetFrameLevel(target:GetFrameLevel() + 50)
             o:Show()
             if o.onOpen then o.onOpen() end
@@ -356,7 +391,8 @@ function ns.PackPopup()
         button3 = L["Journal only"],
         OnCancel = function(_, _, reason) if reason == "clicked" then ns.db.packPopupOff = sig end end,
         OnAlt = function() ns.SetJournalOnly(true) end,
-        timeout = 0, whileDead = true, hideOnEscape = false, preferredIndex = 3, -- Esc must not count as "don't remind"
+        -- with a controller, its back button (Esc) closes it without counting as "don't remind"
+        timeout = 0, whileDead = true, hideOnEscape = padOn(), noCancelOnEscape = true, preferredIndex = 3,
     }
     StaticPopup_Show("CHRONICLE_PACKS")
 end

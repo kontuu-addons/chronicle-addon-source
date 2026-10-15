@@ -101,8 +101,15 @@ local function taleKey()
     return key, zone, ns.Voice.Get(key) ~= nil, text
 end
 
+-- Chronicle hiding the window itself (not you closing it)
+local function hideWin(w)
+    if not w then return end
+    w.byUs = true; w:Hide(); w.byUs = nil
+end
+
 local function create()
     local f = CreateFrame("Frame", "ChronicleCampfireFrame", UIParent, "BackdropTemplate")
+    ns.PadClose("ChronicleCampfireFrame") -- with a controller, its back button (Escape) closes it
     f:SetSize(260, 92)
     local pos = ns.settings.campfirePos
     if pos then f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4]) else f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 190) end
@@ -154,13 +161,20 @@ local function create()
             f.reading = nil
             f:SetWidth(260)
             local w = find(WAITING)
-            if w then C.ShowWaiting(w) else f:Hide() end
+            if w then C.ShowWaiting(w) else hideWin(f) end
             return
         end
         if f.inviting then local _, zone = taleKey(); if zone then invitedOff[zone] = true end; f.inviting = nil end
         f.dismissed = true; f:Hide()
     end)
     f:Hide()
+    -- closed any other way than by Chronicle itself (Escape, a controller's back button) counts like the X: it stays
+    -- closed until you sit down again, instead of popping straight back up while you stand by the fire
+    f:SetScript("OnHide", function(self)
+        if self.byUs then return end
+        if self.inviting then local _, zone = taleKey(); if zone then invitedOff[zone] = true end; self.inviting = nil end
+        self.dismissed = true
+    end)
     return f
 end
 
@@ -228,7 +242,7 @@ C.ShowWaiting = function(a) showWaiting(a) end
 local function showBenefits(a)
     win = win or create()
     local text = benefitText(a)
-    if text == "" then win:Hide(); return end
+    if text == "" then hideWin(win); return end
     win.title:SetText(L["Camp benefits"])
     win.reading = nil
     win:SetWidth(260)
@@ -245,7 +259,7 @@ end
 local function showInvite()
     local key, zone = taleKey()
     if not key or invitedOff[zone] or (ns.char.tales and ns.char.tales[zone]) then
-        if win and win.inviting then win.inviting = nil; win:Hide() end
+        if win and win.inviting then win.inviting = nil; hideWin(win) end
         return
     end
     win = win or create()
@@ -310,16 +324,16 @@ ticker:SetScript("OnUpdate", function(_, elapsed)
         if fresh and not (win and win.dismissed) then showBenefits(b); lastWaiting = nil; return end
     elseif lastWaiting then
         lastWaiting = nil -- stood up before the minute was over
-        if win and ns.Voice.Owner() ~= win.story then win:Hide() end
+        if win and ns.Voice.Owner() ~= win.story then hideWin(win) end
     end
     if not lastWaiting and not find(NEARBY) and #seenOrder > 0 then seenHere, seenOrder = {}, {} end -- left the fire
     -- not sitting: invite when a fire is near, and drop the invitation when it is not
     if not lastWaiting and not (win and win.hideAt) then
-        if find(NEARBY) then showInvite() elseif win and win.inviting then win.inviting = nil; win:Hide() end
+        if find(NEARBY) then showInvite() elseif win and win.inviting then win.inviting = nil; hideWin(win) end
     end
     if win and win.hideAt and GetTime() > win.hideAt and ns.Voice.Owner() ~= win.story then
         win.hideAt = nil
-        win:Hide()
+        hideWin(win)
     end
 end)
 

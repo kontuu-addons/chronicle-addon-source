@@ -4,7 +4,8 @@ local L = ns.L
 local O = {}
 ns.Options = O
 
-local VOL_CVAR = "Sound_DialogVolume"
+-- the volume of the channel the voices play on (Dialog unless chosen otherwise)
+local function volCvar() local _, ch = ns.Voice.Channel() return ch.vol end
 
 -- Chronicle's own page inside the game's settings window (a canvas), with its own checkboxes and sliders. Nothing of
 -- Chronicle's is registered with the game's settings system: the window saves those settings when it closes and runs
@@ -163,9 +164,34 @@ local function build()
 
     section(L["General"])
     box("journalOnly", L["Journal only (no voices)"], L["Turns off every voice: quests, greetings, books, NPC speech, recaps and your character. The journal, chapter recaps as text and the map pins stay. You don't need the voice packs for this."])
-    slider(L["Voice volume"], L["The game's Dialog volume, which Chronicle plays on."], 0, 1, 0.05,
-        function() return tonumber(GetCVar(VOL_CVAR)) or 1 end, function(v) SetCVar(VOL_CVAR, v) end,
+    slider(L["Voice volume"], L["The game's volume for the sound channel Chronicle plays on (Dialog unless you choose another below)."], 0, 1, 0.05,
+        function() return tonumber(GetCVar(volCvar())) or 1 end, function(v) SetCVar(volCvar(), v) end,
         function(v) return math.floor(v * 100 + 0.5) .. "%" end, voicesOn)
+    -- the channel: a button that steps through them (thanks AstroCat)
+    do
+        local r = newRow(30)
+        local caption = r:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        caption:SetPoint("LEFT", 14, 0); caption:SetText(L["Sound channel"])
+        local b = CreateFrame("Button", nil, r, "UIPanelButtonTemplate")
+        b:SetSize(120, 22); b:SetPoint("RIGHT", r, "RIGHT", -70, 0)
+        b:SetScript("OnClick", function()
+            local chan, order = ns.Voice.Channel(), ns.Voice.CHANNEL_ORDER
+            local i = 1
+            for n, id in ipairs(order) do if id == chan then i = n end end
+            if ns.Voice.ReleaseDuck then ns.Voice.ReleaseDuck(true) end -- the old channel's music level back first
+            ns.settings.channel = order[i % #order + 1]
+            O.Refresh()
+        end)
+        tooltip(b, L["Sound channel"], L["Which of the game's sound channels the voices play on, so you can set their level against the rest with the game's own sliders. Dialog is the usual one."])
+        widgets[#widgets + 1] = function()
+            local _, ch = ns.Voice.Channel()
+            b:SetText(L[ch.name])
+            local on = voicesOn()
+            b:SetEnabled(on)
+            local c = on and 1 or 0.5
+            caption:SetTextColor(c, c, c)
+        end
+    end
     action(L["Test the voices"], L["Test"], L["Plays a short line from the narrator, so you can hear that the voices work and set the volume."],
         function() ns.Voice.Test() end)
     box("duck", L["Lower music while talking"], L["While Chronicle is talking, music and ambient sounds go down to a third, and come back up when it's done."],
@@ -189,6 +215,27 @@ local function build()
 
     section(L["While talking"])
     box("speaker", L["Show the speaker window"], L["The window with the speaker's portrait, subtitles and a stop button that pops up while someone talks. Turn off to only hear the voices. Drag the window to move it."])
+    -- the speaker window's look: the window with the portrait, or cinematic (thanks Alche and Hedge)
+    do
+        local r = newRow(30)
+        local caption = r:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        caption:SetPoint("LEFT", 14, 0); caption:SetText(L["Speaker window style"])
+        local b = CreateFrame("Button", nil, r, "UIPanelButtonTemplate")
+        b:SetSize(120, 22); b:SetPoint("RIGHT", r, "RIGHT", -70, 0)
+        b:SetScript("OnClick", function()
+            ns.settings.speakerStyle = ns.settings.speakerStyle == "cinematic" and "window" or "cinematic"
+            O.Refresh()
+            if ns.Voice and ns.Voice.Test then ns.Voice.Test() end -- see it right away
+        end)
+        tooltip(b, L["Speaker window style"], L["Window: the speaker's portrait, name and subtitles in a box. Cinematic: no box, just the name and the subtitles in the middle of the screen, like a film. Drag it to move it; each style remembers its own place."])
+        widgets[#widgets + 1] = function()
+            b:SetText(ns.settings.speakerStyle == "cinematic" and L["Cinematic"] or L["Window"])
+            local on = ns.settings.speaker and true or false
+            b:SetEnabled(on)
+            local c = on and 1 or 0.5
+            caption:SetTextColor(c, c, c)
+        end
+    end
     box("subtitles", L["Subtitles"], L["Show the text of what is being said under the speaker's name."])
     box("bigSubtitles", L["Larger subtitles"], L["Bigger text for the subtitles, a little less of it at a time."])
     box("skipHeard", L["Don't repeat lines I've heard"], L["Lines this character has already heard are not played again automatically (like reopening an unfinished quest). The Listen buttons always replay."])
@@ -210,6 +257,8 @@ local function build()
     box("campfire", L["By the fire"], L["When you sit by a camp fire, a small window counts down the minute until the camp's benefits, offers a campfire tale about the zone while you wait, and then shows what the camp gave you."])
     box("hideUnfound", L["Hide what I haven't found"], L["No hints at all about what you haven't found yet: no chapters still to discover in the journal or on the map, no road ahead, and no empty places or totals in the Library. Everything you have been through stays."])
     box("showLeft", L["Show what's left"], L["Lists the quests still to do in each chapter by name, level and quest giver, and shows where the chapters you haven't found yet start, in the journal and on the map. No story is given away."])
+    box("questTabs", L["Side tabs on the quest window"], L["Listen and Recap as tabs on the right side of the quest window, like the journal's, instead of buttons inside it. Handy when other addons put their own buttons there."],
+        nil, function(v) ns.settings.questTabs = v; ns.Voice.UpdateQuestButton() end)
     box("newMarker", L["Mark new Forever quests"], L["Shows \"New in WoW: Forever\" on the quest window for quests that were not in original Classic, and whether they have a voice yet."])
     section(L["Map"])
     box("storyPanel", L["Story panel on the world map"], L["A small panel on a zone's map with its chapters and how far you are, with Play story. On the continent map, hover a zone to see how much of its story you've found."])

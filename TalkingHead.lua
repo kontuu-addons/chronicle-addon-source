@@ -86,6 +86,7 @@ end
 
 local function create()
     f = CreateFrame("Frame", "ChronicleTalkingHead", UIParent, "BackdropTemplate") -- named so the game remembers where it was dragged
+    ns.PadClose("ChronicleTalkingHead") -- with a controller, its back button (Escape) closes it; the voice goes on
     f:SetSize(430, 104)
     f:SetFrameStrata("MEDIUM")
     f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
@@ -101,7 +102,7 @@ local function create()
         local s = f:GetEffectiveScale() / UIParent:GetEffectiveScale()
         f:ClearAllPoints()
         f:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", right * s, top * s)
-        ns.settings.speakerPos = { "TOPRIGHT", "BOTTOMLEFT", right * s, top * s }
+        ns.settings[f.cine and "speakerPosCine" or "speakerPos"] = { "TOPRIGHT", "BOTTOMLEFT", right * s, top * s }
     end
     f:SetScript("OnDragStart", function(self) if not self.dockedTo then self:StartMoving() end end)
     f:SetScript("OnDragStop", function(self)
@@ -147,6 +148,41 @@ local function create()
     f.sub:SetJustifyH("LEFT"); f.sub:SetJustifyV("TOP"); f.sub:SetSpacing(2)
     if f.sub.SetMaxLines then f.sub:SetMaxLines(6) end
     f.sub:SetTextColor(0.92, 0.88, 0.8)
+
+    -- the cinematic shade: dark in the middle, fading out to the sides and, in thin steps above and below the frame,
+    -- to the top and bottom, so it reads as a soft band and not a box
+    f.shade = {}
+    -- one row of the band: its top at the frame's edge e1 (TOP or BOTTOM) + y1, its bottom at e2 + y2, darkness a
+    local function shadeRow(e1, y1, e2, y2, a)
+        local row = {}
+        for i, side in ipairs({ "left", "mid", "right" }) do
+            local t = f:CreateTexture(nil, "BACKGROUND")
+            t:SetTexture("Interface\\Buttons\\WHITE8x8")
+            if side == "mid" then
+                t:SetVertexColor(0, 0, 0, a)
+            elseif t.SetGradient and CreateColor then
+                local clear, dark = CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, a)
+                pcall(t.SetGradient, t, "HORIZONTAL", side == "left" and clear or dark, side == "left" and dark or clear)
+            else
+                t:SetVertexColor(0, 0, 0, a * 0.5)
+            end
+            t:Hide()
+            row[i] = t
+            f.shade[#f.shade + 1] = t
+        end
+        row[1]:SetPoint("TOPLEFT", f, e1 .. "LEFT", 0, y1); row[1]:SetPoint("BOTTOMLEFT", f, e2 .. "LEFT", 0, y2)
+        row[1]:SetWidth(140)
+        row[3]:SetPoint("TOPRIGHT", f, e1 .. "RIGHT", 0, y1); row[3]:SetPoint("BOTTOMRIGHT", f, e2 .. "RIGHT", 0, y2)
+        row[3]:SetWidth(140)
+        row[2]:SetPoint("TOPLEFT", row[1], "TOPRIGHT"); row[2]:SetPoint("BOTTOMRIGHT", row[3], "BOTTOMLEFT")
+    end
+    -- the frame itself, then six thin steps above and below it that get lighter
+    shadeRow("TOP", 0, "BOTTOM", 0, 0.55)
+    for i = 1, 6 do
+        local a = 0.55 * (1 - i / 7)
+        shadeRow("TOP", 3 * i, "TOP", 3 * (i - 1), a)
+        shadeRow("BOTTOM", -3 * (i - 1), "BOTTOM", -3 * i, a)
+    end
 
     f.progress = CreateFrame("StatusBar", nil, f)
     f.progress:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 109, 10); f.progress:SetPoint("RIGHT", -14, 0)
@@ -200,6 +236,7 @@ local function create()
 
     local stop = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     stop:SetSize(26, 26); stop:SetPoint("TOPRIGHT", 1, 1)
+    f.stop = stop
     -- click: next line in the queue (the last one closes it); shift-click: stop everything
     local function skip()
         if not current then T.Hide(true) return end -- the line already ended (kept up for Good / Bad)
@@ -227,6 +264,13 @@ local function create()
     f.replay = replay
     -- right-click anywhere on the window does the same, wherever the X ends up (thanks timmeh)
     f:SetScript("OnMouseUp", function(_, button) if button == "RightButton" then skip() end end)
+    -- cinematic: the X and replay stay faint until the mouse is over the band
+    f.dimButtons = function()
+        local a = (f.cine and not f:IsMouseOver()) and 0.3 or 1
+        f.stop:SetAlpha(a); f.replay:SetAlpha(a)
+    end
+    f:SetScript("OnEnter", f.dimButtons)
+    f:SetScript("OnLeave", f.dimButtons)
 
     f:SetScript("OnUpdate", function(self)
         if current and startedAt then
@@ -260,6 +304,49 @@ local function layout(compact)
     f.name:SetPoint("RIGHT", -50, 0)
 end
 
+-- Two looks (option "Speaker window"): the window with the portrait, or cinematic: no box or portrait, the name, what
+-- it's about and the subtitles centred on a soft dark band, like a film's subtitles (thanks Alche and Hedge).
+local function applyStyle(compact)
+    local cine = ns.settings.speakerStyle == "cinematic"
+    local changed = f.cine ~= cine
+    f.cine = cine
+    for _, t in ipairs(f.shade) do t:SetShown(cine) end
+    if cine then
+        f:SetBackdropColor(0, 0, 0, 0); f:SetBackdropBorderColor(0, 0, 0, 0)
+        f.window:Hide(); f.title:Hide()
+        f:SetWidth(640)
+        f.name:ClearAllPoints(); f.name:SetPoint("TOPLEFT", 50, -10); f.name:SetPoint("TOPRIGHT", -50, -10)
+        f.name:SetJustifyH("CENTER")
+        f.about:ClearAllPoints(); f.about:SetPoint("TOPLEFT", f.name, "BOTTOMLEFT", 0, -3)
+        f.about:SetPoint("TOPRIGHT", f.name, "BOTTOMRIGHT", 0, -3); f.about:SetJustifyH("CENTER")
+        f.sub:ClearAllPoints() -- under the name, both corners from "about" (inset 50), a little wider: 36 from the edges
+        f.sub:SetPoint("TOPLEFT", f.about, "BOTTOMLEFT", -14, -8); f.sub:SetPoint("TOPRIGHT", f.about, "BOTTOMRIGHT", 14, -8)
+        f.sub:SetJustifyH("CENTER")
+        f.sub:SetTextColor(1, 0.97, 0.9); f.sub:SetShadowOffset(1, -1); f.sub:SetShadowColor(0, 0, 0, 1)
+        f.progress:ClearAllPoints(); f.progress:SetPoint("BOTTOM", 0, 6); f.progress:SetSize(180, 2)
+    else
+        f:SetBackdropColor(0.07, 0.055, 0.04, 0.92); f:SetBackdropBorderColor(0.6, 0.48, 0.25, 1)
+        f.title:Show()
+        f.name:SetJustifyH("LEFT")
+        f.about:ClearAllPoints(); f.about:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", 0, -8); f.about:SetPoint("RIGHT", -12, 0)
+        f.about:SetJustifyH("LEFT")
+        f.sub:ClearAllPoints(); f.sub:SetPoint("TOPLEFT", f.about, "BOTTOMLEFT", 0, -6); f.sub:SetPoint("RIGHT", -14, 0)
+        f.sub:SetJustifyH("LEFT"); f.sub:SetTextColor(0.92, 0.88, 0.8)
+        if changed then -- the window's own layout again (layout places the progress bar)
+            f.progress:ClearAllPoints(); f.progress:SetHeight(5)
+            f.compact = nil
+        end
+        layout(compact)
+    end
+    if changed and not f.dockedTo then -- each look has its own place; cinematic starts low in the middle
+        local pos = ns.settings[cine and "speakerPosCine" or "speakerPos"]
+        f:ClearAllPoints()
+        if type(pos) == "table" and type(pos[3]) == "number" then f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4])
+        elseif cine then f:SetPoint("TOP", UIParent, "BOTTOM", 0, 300)
+        else f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 170) end
+    end
+end
+
 -- The Good / Bad buttons: shown with the setting on; the one already chosen for this line is filled in.
 function T.UpdateMarks()
     if not f then return end
@@ -271,7 +358,7 @@ function T.UpdateMarks()
         btn:SetBackdropColor(c[1], c[2], c[3], chosen and 1 or 0.15)
         btn:SetBackdropBorderColor(c[1], c[2], c[3], 1)
     end
-    f.progress:SetPoint("RIGHT", on and -112 or -14, 0)
+    if not f.cine then f.progress:SetPoint("RIGHT", on and -112 or -14, 0) end
 end
 
 local function showModel(who)
@@ -306,6 +393,7 @@ function T.Show(entry, key)
     if ns.Speech and ns.Speech.Bubbled(key) then subtitle = nil end -- the bubble over their head has the words
     local compact = not (subtitle and subtitle ~= "")
     layout(compact)
+    applyStyle(compact)
     local who = (entry.w and entry.w ~= "") and entry.w or "Narrator"  -- the voice data names these two in English
     f.name:SetText(who == "Narrator" and L["Narrator"] or who)
     if who == "You" then
@@ -368,16 +456,21 @@ function T.Show(entry, key)
         end
         f.sub:SetText(pages[1].text)
         f.sub:Show()
-        f:SetHeight(math.max(104, 74 + tallest + 22))
+        f:SetHeight(f.cine and (10 + f.name:GetStringHeight() + 3 + f.about:GetStringHeight() + 8 + tallest + 16)
+            or math.max(104, 74 + tallest + 22))
     else
         pages = nil
         f.sub:SetText("")
         f.sub:Hide()
-        f:SetHeight(76)
+        f:SetHeight(f.cine and (10 + f.name:GetStringHeight() + 3 + f.about:GetStringHeight() + 14) or 76)
     end
     f.progress:SetValue(0)
     T.UpdateMarks()
+    f.dimButtons()
+    local fresh = not f:IsShown()
     f:Show()
+    if f.cine and fresh and UIFrameFadeIn then UIFrameFadeIn(f, 0.25, 0, 1) -- cinematic: fades in, like a film's titles
+    elseif not f.cine then f:SetAlpha(1) end
 end
 
 -- Another addon's frame can hold the speaker window while it is open (the API's DockSpeaker): placed against that

@@ -20,6 +20,7 @@ end
 
 local current -- voice key of the page on screen
 local btn
+local makeButton -- below: the Listen button, made the first time a book opens
 
 local function update()
     if not btn then return end
@@ -41,6 +42,7 @@ local function onPage()
         update()
         return
     end
+    makeButton()
     current = B.PageKey(title, text)
     if ns.settings.debug then
         ns.pr(("debug: book %q page %d -> %s"):format(title, page, current and (ns.Voice.Get(current) and current or current .. " (not voiced yet)") or "no match"))
@@ -85,8 +87,10 @@ ev:SetScript("OnEvent", function(_, event)
 end)
 for _, e in ipairs({ "ITEM_TEXT_READY", "ITEM_TEXT_CLOSED" }) do pcall(ev.RegisterEvent, ev, e) end
 
-table.insert(ns.onLogin, function()
-    if not ItemTextFrame then return end
+-- The Listen button on the book window. Made the first time a book opens: on newer clients the game only loads
+-- that window then, so at login there was nothing to put it on (books played, but couldn't be played again).
+function makeButton()
+    if btn or not ItemTextFrame then return end
     btn = CreateFrame("Button", nil, ns.Overlay(ItemTextFrame), "UIPanelButtonTemplate")
     btn:SetSize(70, 20); ns.FitButton(btn)
     btn:SetPoint("TOPRIGHT", ItemTextFrame, "TOPRIGHT", -30, -30)
@@ -96,4 +100,5 @@ table.insert(ns.onLogin, function()
         update()
     end)
     btn:Hide()
-end)
+end
+table.insert(ns.onLogin, makeButton)

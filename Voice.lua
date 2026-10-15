@@ -129,6 +129,36 @@ table.insert(ns.onLogin, releaseBackground)
 -- them, and fade back up when it is quiet again. Your own levels are kept in the saved data until then, so a crash
 -- mid-line puts them back at the next login. A level you changed yourself in the meantime is left as you set it.
 local DUCK = { "Sound_MusicVolume", "Sound_AmbienceVolume" }
+
+-- The sound channel the voices play on (option, Dialog by default; thanks AstroCat): its name for PlaySoundFile,
+-- its volume and on/off settings, and its name in the game's Audio options
+local CHANNELS = {
+    Dialog = { vol = "Sound_DialogVolume", on = "Sound_EnableDialog", name = "Dialog" },
+    SFX = { vol = "Sound_SFXVolume", on = "Sound_EnableSFX", name = "Sound Effects" },
+    Master = { vol = "Sound_MasterVolume", on = "Sound_EnableAllSound", name = "Master" },
+    Music = { vol = "Sound_MusicVolume", on = "Sound_EnableMusic", name = "Music" },
+    Ambience = { vol = "Sound_AmbienceVolume", on = "Sound_EnableAmbience", name = "Ambience" },
+}
+V.CHANNEL_ORDER = { "Dialog", "SFX", "Master", "Music", "Ambience" }
+---@return string id, table channel
+function V.Channel()
+    local c = tostring(ns.settings and ns.settings.channel or "Dialog")
+    if not CHANNELS[c] then c = "Dialog" end
+    return c, CHANNELS[c]
+end
+local function channelOff()
+    local _, ch = V.Channel()
+    local function off(cvar) local v = GetCVar and GetCVar(cvar) return v ~= nil and tonumber(v) == 0 end
+    return off("Sound_EnableAllSound") or off(ch.on)
+end
+local function channelOffMessage(first)
+    local id, ch = V.Channel()
+    if id == "Dialog" then
+        return first and L["could not play a voice line: the game's Dialog sound is switched off (System > Audio > Dialog)."]
+            or L["the voices are silent: the game's Dialog sound is switched off (System > Audio > Dialog)."]
+    end
+    return (L["the voices are silent: the game's %s sound is switched off (System > Audio)."]):format(L[ch.name])
+end
 local DUCK_TO = 0.35
 local duckFade
 
@@ -141,8 +171,9 @@ local function holdDuck()
         for _, cv in ipairs(DUCK) do saved[cv] = tonumber(GetCVar(cv)) end
         ns.db.duckSaved = saved
     end
-    for _, cv in ipairs(DUCK) do
-        if saved[cv] then pcall(SetCVar, cv, saved[cv] * DUCK_TO) end
+    local _, ch = V.Channel()
+    for _, cv in ipairs(DUCK) do -- never the channel Chronicle itself plays on
+        if saved[cv] and cv ~= ch.vol then pcall(SetCVar, cv, saved[cv] * DUCK_TO) end
     end
 end
 
@@ -253,7 +284,7 @@ local function start(entry, key)
     if ns.char and ns.char.heard and key and key:match("^q%d") then ns.char.heard[key] = true end
     holdBackground()
     holdDuck()
-    local willPlay, h = PlaySoundFile("Interface\\AddOns\\" .. entry.p .. "\\Audio\\" .. entry.f, "Dialog")
+    local willPlay, h = PlaySoundFile("Interface\\AddOns\\" .. entry.p .. "\\Audio\\" .. entry.f, (V.Channel()))
     if ns.settings.debug then
         ns.pr(("debug: play %s -> %s"):format(entry.f, willPlay and "playing" or "FAILED (file not loaded by the game, or Dialog sound muted)"))
     end
@@ -261,9 +292,8 @@ local function start(entry, key)
         if not warned then
             warned = true
             -- say which of the two it is: a sound channel switched off, or a voice file the game can't find
-            local function off(cvar) local v = GetCVar and GetCVar(cvar) return v ~= nil and tonumber(v) == 0 end
-            if off("Sound_EnableAllSound") or off("Sound_EnableDialog") then
-                ns.pr(L["could not play a voice line: the game's Dialog sound is switched off (System > Audio > Dialog)."])
+            if channelOff() then
+                ns.pr(channelOffMessage(true))
             else
                 local pack = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(entry.p, "Title") or entry.p
                 ns.pr((L["could not play %s: the game can't find the file. Restart the game after installing or updating voice packs. If that doesn't help, reinstall %s."]):format(entry.f, pack))
@@ -447,7 +477,17 @@ local function afterGameGreeting(fn)
 end
 local closeEv = CreateFrame("Frame")
 for _, e in ipairs({ "GOSSIP_CLOSED", "QUEST_FINISHED" }) do pcall(closeEv.RegisterEvent, closeEv, e) end
-closeEv:SetScript("OnEvent", function() ended, endTime = true, GetTime() end)
+closeEv:SetScript("OnEvent", function()
+    ended, endTime = true, GetTime()
+    -- a greeting still waiting its turn belongs to a conversation that is over: it would play long after (the wind
+    -- rider master greeting you in Thunder Bluff), so it goes, and greets you next time instead (thanks Alche)
+    for i = #(queue or {}), 1, -1 do
+        if isGreeting(queue[i]) then
+            ns.char.greeted[queue[i]] = nil
+            table.remove(queue, i)
+        end
+    end
+end)
 
 local onGreeting
 function V.OnGreeting(...)
@@ -613,12 +653,18 @@ function V.OnQuestClosed()
 end
 
 -- ---------------------------------------------------------------- play/stop button on the quest window
-local btn, marker, recapBtn
+local btn, marker, recapBtn, listenTab, recapTab
+local ICON_LISTEN, ICON_STOP = "Interface\\Icons\\Ability_Warrior_BattleShout", "Interface\\Icons\\Spell_Holy_Silence"
 function V.UpdateQuestButton()
     if not btn then return end
     local has = ns.lastKey and V.Get(ns.lastKey)
-    btn:SetShown(has and true or false)
+    local tabs = ns.settings.questTabs and listenTab ~= nil -- option: tabs on the window's side instead of buttons in it
+    btn:SetShown(has and not tabs and true or false)
     btn:SetText(handle and L["Stop"] or L["Listen"])
+    if listenTab then
+        listenTab:SetShown(has and tabs and true or false)
+        listenTab.icon:SetTexture(handle and ICON_STOP or ICON_LISTEN)
+    end
     -- Recap: the story so far in this quest's chapter, as the panel beside the quest log tells it (the last step you
     -- finished, or the chapter's introduction); handy when handing in a quest whose start you've forgotten
     local rkey
@@ -626,13 +672,21 @@ function V.UpdateQuestButton()
         local arc, step = ns.StoryLog.ChapterOf(ns.lastQuestID)
         if arc then
             local _, k = ns.StoryLog.StorySoFar(arc, step)
-            if k and V.Get(k) then rkey = k; recapBtn.chapter = arc.title end
+            if k and V.Get(k) then rkey = k; recapBtn.chapter = arc.title; if recapTab then recapTab.chapter = arc.title end end
         end
     end
     if recapBtn then
         recapBtn.key = rkey
-        recapBtn:SetShown(rkey and true or false)
+        recapBtn:SetShown(rkey and not tabs and true or false)
         recapBtn:SetText(owner == recapBtn and handle and L["Stop"] or L["Recap"])
+    end
+    if recapTab then
+        recapTab.key = rkey
+        recapTab:SetShown(rkey and tabs and true or false)
+        recapTab.icon:SetTexture(owner == recapTab and handle and ICON_STOP or "Interface\\Icons\\INV_Misc_Book_09")
+        recapTab:ClearAllPoints()
+        if has then recapTab:SetPoint("TOPLEFT", listenTab, "BOTTOMLEFT", 0, -4)
+        else recapTab:SetPoint("TOPLEFT", listenTab, "TOPLEFT", 0, 0) end
     end
     -- "New in WoW: Forever" for quests that were not in Classic, and whether it has a voice yet
     local new = ns.settings.newMarker and ns.lastQuestID and ns.IsNew(ns.lastQuestID)
@@ -640,7 +694,7 @@ function V.UpdateQuestButton()
     if new then
         -- next to the Listen button, or where it would be; never behind the portrait on the left
         marker:ClearAllPoints()
-        if has then marker:SetPoint("RIGHT", btn, "LEFT", -8, 0)
+        if has and not tabs then marker:SetPoint("RIGHT", btn, "LEFT", -8, 0)
         else marker:SetPoint("RIGHT", QuestFrame, "TOPRIGHT", -30, -40) end
         marker:SetText(has and L["New in WoW: Forever"] or L["New in WoW: Forever  |cff9d9d9d· voice coming soon|r"])
     end
@@ -655,9 +709,40 @@ table.insert(ns.onLogin, function()
     local layer = ns.Overlay(QuestFrame)
     btn = CreateFrame("Button", nil, layer, "UIPanelButtonTemplate")
     btn:SetSize(70, 20); ns.FitButton(btn)
-    btn:SetPoint("TOPRIGHT", QuestFrame, "TOPRIGHT", -30, -30)
+    -- where it sits: the top right of the quest window, or where you moved it (shift-drag; it overlapped other
+    -- addons' buttons, thanks AstroCat). The Recap button and the "New in WoW: Forever" note go along.
+    local function place()
+        local pos = ns.settings.questBtnPos
+        btn:ClearAllPoints()
+        btn:SetPoint("TOPRIGHT", QuestFrame, "TOPRIGHT", pos and pos[1] or -30, pos and pos[2] or -30)
+    end
+    place()
+    btn:SetMovable(true); btn:SetClampedToScreen(true)
+    btn:RegisterForDrag("LeftButton")
+    btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    btn:SetScript("OnDragStart", function(self) if IsShiftKeyDown() then self.moving = true; self:StartMoving() end end)
+    btn:SetScript("OnDragStop", function(self)
+        if not self.moving then return end
+        self.moving = nil
+        self:StopMovingOrSizing()
+        local s = self:GetEffectiveScale() / QuestFrame:GetEffectiveScale()
+        ns.settings.questBtnPos = { math.floor(self:GetRight() * s - QuestFrame:GetRight() + 0.5),
+            math.floor(self:GetTop() * s - QuestFrame:GetTop() + 0.5) }
+        place()
+    end)
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(handle and L["Stop"] or L["Listen"])
+        GameTooltip:AddLine(L["Shift-drag to move it, shift-right-click to put it back"], 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     btn.text = btn:GetFontString()
-    btn:SetScript("OnClick", function()
+    btn:SetScript("OnClick", function(_, button)
+        if button == "RightButton" then
+            if IsShiftKeyDown() then ns.settings.questBtnPos = nil; place() end
+            return
+        end
         if handle then V.Stop() elseif ns.lastKey then V.Play(ns.lastKey) end
         V.UpdateQuestButton()
     end)
@@ -677,6 +762,42 @@ table.insert(ns.onLogin, function()
     end)
     recapBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     recapBtn:Hide()
+    -- the same two as tabs on the window's right side, like the journal's (option "Side tabs on the quest window")
+    local function sideTab(icon, onClick, tip)
+        local b = CreateFrame("Button", nil, layer)
+        b:SetSize(48, 48)
+        b.bg = b:CreateTexture(nil, "BACKGROUND")
+        if not (b.bg.SetAtlas and pcall(b.bg.SetAtlas, b.bg, "common-sidetab")) then
+            b.bg:SetTexture("Interface\\SpellBook\\SpellBook-SkillLineTab")
+        end
+        b.bg:SetSize(48, 52); b.bg:SetPoint("CENTER")
+        b.icon = b:CreateTexture(nil, "ARTWORK"); b.icon:SetSize(30, 30); b.icon:SetPoint("CENTER", -2, 0)
+        b.icon:SetTexture(icon); b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        local hl = b:CreateTexture(nil, "HIGHLIGHT"); hl:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
+        hl:SetBlendMode("ADD"); hl:SetPoint("TOPLEFT", b.icon, -2, 2); hl:SetPoint("BOTTOMRIGHT", b.icon, 2, -2)
+        b:SetScript("OnClick", onClick)
+        b:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT"); tip(self); GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        b:Hide()
+        return b
+    end
+    listenTab = sideTab(ICON_LISTEN, function()
+        if handle then V.Stop() elseif ns.lastKey then V.Play(ns.lastKey) end
+        V.UpdateQuestButton()
+    end, function() GameTooltip:AddLine(handle and L["Stop"] or L["Listen"], 1, 1, 1) end)
+    -- just outside the window's right edge: the classic quest window's art ends about 30 pixels inside its frame
+    local modern = QuestFrame.NineSlice or QuestFrame.PortraitContainer
+    listenTab:SetPoint("TOPLEFT", QuestFrame, "TOPRIGHT", modern and -3 or -33, -60)
+    recapTab = sideTab("Interface\\Icons\\INV_Misc_Book_09", function(self)
+        if owner == self and handle then V.Stop() elseif self.key then V.Play(self.key, self) end
+        V.UpdateQuestButton()
+    end, function(self)
+        GameTooltip:AddLine(L["Recap"], 1, 1, 1)
+        GameTooltip:AddLine(L["The story so far"])
+        if self.chapter then GameTooltip:AddLine(self.chapter, 1, 1, 1) end
+    end)
     marker = layer:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     marker:SetPoint("RIGHT", btn, "LEFT", -8, 0)
     marker:SetTextColor(0.35, 0.85, 0.8) -- teal, like the WoW: Forever logo
@@ -696,11 +817,42 @@ local function selectedQuestID()
     return (id and id > 0) and id or nil
 end
 
-local function logButton(parent, point, x, y)
+local function logButton(parent, point, x, y, id)
     local b = CreateFrame("Button", nil, ns.Overlay(parent), "UIPanelButtonTemplate")
     b:SetSize(70, 20); ns.FitButton(b)
-    b:SetPoint(point, parent, point, x, y)
-    b:SetScript("OnClick", function(self)
+    -- where it sits, or where you moved it with shift-drag (saved per quest log, like the quest window's)
+    local function place()
+        local pos = ns.settings.logBtnPos and ns.settings.logBtnPos[id]
+        b:ClearAllPoints()
+        if pos then b:SetPoint("TOPRIGHT", parent, "TOPRIGHT", pos[1], pos[2]) else b:SetPoint(point, parent, point, x, y) end
+    end
+    place()
+    b:SetMovable(true); b:SetClampedToScreen(true)
+    b:RegisterForDrag("LeftButton")
+    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    b:SetScript("OnDragStart", function(self) if IsShiftKeyDown() then self.moving = true; self:StartMoving() end end)
+    b:SetScript("OnDragStop", function(self)
+        if not self.moving then return end
+        self.moving = nil
+        self:StopMovingOrSizing()
+        local sc = self:GetEffectiveScale() / parent:GetEffectiveScale()
+        ns.settings.logBtnPos = ns.settings.logBtnPos or {}
+        ns.settings.logBtnPos[id] = { math.floor(self:GetRight() * sc - parent:GetRight() + 0.5),
+            math.floor(self:GetTop() * sc - parent:GetTop() + 0.5) }
+        place()
+    end)
+    b:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine((handle and playingKey == self.key) and L["Stop"] or L["Listen"])
+        GameTooltip:AddLine(L["Shift-drag to move it, shift-right-click to put it back"], 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    b:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            if IsShiftKeyDown() and ns.settings.logBtnPos then ns.settings.logBtnPos[id] = nil; place() end
+            return
+        end
         if handle and playingKey == self.key then V.Stop() elseif self.key then V.Play(self.key) end
     end)
     local elapsed = 0
@@ -708,8 +860,8 @@ local function logButton(parent, point, x, y)
         elapsed = elapsed + dt
         if elapsed < 0.25 then return end
         elapsed = 0
-        local id = selectedQuestID()
-        self.key = id and V.PageKey(id, "detail") or nil
+        local qid = selectedQuestID()
+        self.key = qid and V.PageKey(qid, "detail") or nil
         local has = self.key and V.Get(self.key)
         self:SetAlpha(has and 1 or 0)
         self:EnableMouse(has and true or false)
@@ -718,10 +870,10 @@ local function logButton(parent, point, x, y)
 end
 
 table.insert(ns.onLogin, function()
-    if QuestLogFrame then logButton(QuestLogFrame, "TOPRIGHT", -44, -44) end
-    if QuestLogDetailFrame then logButton(QuestLogDetailFrame, "TOPRIGHT", -44, -44) end
+    if QuestLogFrame then logButton(QuestLogFrame, "TOPRIGHT", -44, -44, "log") end
+    if QuestLogDetailFrame then logButton(QuestLogDetailFrame, "TOPRIGHT", -44, -44, "detail") end
     -- inside the details page, level with its Back button: above it sat on the map's full-screen button
-    if QuestMapFrame and QuestMapFrame.DetailsFrame then logButton(QuestMapFrame.DetailsFrame, "TOPRIGHT", -28, -12) end
+    if QuestMapFrame and QuestMapFrame.DetailsFrame then logButton(QuestMapFrame.DetailsFrame, "TOPRIGHT", -28, -12, "map") end
 end)
 
 -- The voices play on the game's Dialog channel: switched off, Chronicle is silent and nothing says why. Say it once
@@ -729,10 +881,9 @@ end)
 table.insert(ns.onLogin, function()
     C_Timer.After(8, function()
         if not ns.settings.voice or ns.settings.journalOnly then return end
-        local function off(cvar) local v = GetCVar and GetCVar(cvar) return v ~= nil and tonumber(v) == 0 end
-        if off("Sound_EnableAllSound") or off("Sound_EnableDialog") then
+        if channelOff() then
             warned = true -- no second message when the first line can't play
-            ns.pr(L["the voices are silent: the game's Dialog sound is switched off (System > Audio > Dialog)."])
+            ns.pr(channelOffMessage(false))
         end
     end)
 end)

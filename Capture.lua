@@ -163,6 +163,17 @@ end
 
 -- ---------------------------------------------------------------- greeting windows
 -- The gossip window ("No other race on Azeroth has suffered...") or the quest greeting of an NPC with several quests.
+-- a recorded greeting with a page no voiced line matches yet: still worth keeping and sharing
+function ns.GreetingPending(id, g)
+    if type(g) ~= "table" or type(g.text) ~= "string" then return false end
+    if not ns.Voice.GreetingKey(id, g.text) then return true end
+    for _, t in ipairs(g.more or {}) do
+        if type(t) == "string" and not ns.Voice.GreetingKey(id, t) then return true end
+    end
+    return false
+end
+
+local prunedGreetings = false
 local function onGreeting(kind)
     local text
     if kind == "gossip" then
@@ -184,12 +195,30 @@ local function onGreeting(kind)
     local newText = lore.greet and lore.greet[npc.npcID] ~= nil
     ns.db.greetings = ns.db.greetings or {}
     if not ns.english then ns.Voice.OnGreeting(npc.npcID, key, text, npc.sex == 3); return end
+    -- once per session, greetings that have a voice by now are let go: the limit below counts only the ones still
+    -- waiting, so long-time recorders keep recording (Turak Runetotem's talent page was never kept; thanks Alche)
+    if not prunedGreetings then
+        prunedGreetings = true
+        for id, g in pairs(ns.db.greetings) do
+            if not ns.GreetingPending(id, g) then ns.db.greetings[id] = nil end
+        end
+    end
     local recorded = 0
     for _ in pairs(ns.db.greetings) do recorded = recorded + 1 end
     if not key and (unknownNPC or newText) and (ns.db.greetings[npc.npcID] or recorded < 400) then
         -- a greeting nobody has voiced yet (new NPC, or new text): keep it for /lore share and the next release
         local g = ns.db.greetings[npc.npcID] or {}
-        g.name, g.sex, g.creature, g.kind, g.text = npc.name, npc.sex, npc.creature, npc.kind, text
+        g.name, g.sex, g.creature, g.kind = npc.name, npc.sex, npc.creature, npc.kind
+        -- every page this NPC shows is kept: the welcome and the answers behind its chat options (the newest used to
+        -- replace the rest, so only the last page someone saw ever got a voice)
+        if not g.text or g.text == text then
+            g.text = text
+        else
+            g.more = g.more or {}
+            local have = false
+            for _, t in ipairs(g.more) do if t == text then have = true end end
+            if not have and #g.more < 5 then g.more[#g.more + 1] = text end
+        end
         g.model = npc.model
         g.zone = where()
         g.by = reader()

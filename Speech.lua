@@ -65,7 +65,12 @@ end
 -- (guards and some enemies come as both, with a voice for each)
 local function speakerSexOf(guid)
     if not guid or (canaccessvalue and not canaccessvalue(guid)) then return nil end
-    local units = { "target", "mouseover", "focus" }
+    local units = { "target", "mouseover", "focus", "targettarget", "softenemy", "softinteract", "pettarget",
+        "party1target", "party2target", "party3target", "party4target" }
+    if UnitTokenFromGUID then -- the game's own lookup, when it knows the speaker as a unit
+        local ok, token = pcall(UnitTokenFromGUID, guid)
+        if ok and type(token) == "string" then table.insert(units, 1, token) end
+    end
     if C_NamePlate and C_NamePlate.GetNamePlates then
         for _, plate in ipairs(C_NamePlate.GetNamePlates() or {}) do
             if plate.namePlateUnitToken then units[#units + 1] = plate.namePlateUnitToken end
@@ -80,6 +85,26 @@ local function speakerSexOf(guid)
     end
 end
 
+-- chatter that came while other chatter was talking: played after it, if still fresh (10 seconds)
+local waiting = {}
+local function sayNow(said)
+    bubbled[said.key] = said.bubbled
+    ns.Voice.SetText(said.key, said.text)
+    ns.Voice.SetSpeakerSex(said.sex)
+    ns.Voice.Play(said.key)
+    ns.Voice.SetSpeakerSex(nil)
+end
+local queueWatch = CreateFrame("Frame")
+local queueWait = 0
+queueWatch:SetScript("OnUpdate", function(_, dt)
+    queueWait = queueWait - dt
+    if queueWait > 0 or #waiting == 0 then return end
+    queueWait = 0.2
+    if ns.Voice.IsPlaying() then return end
+    local said = table.remove(waiting, 1)
+    if said and GetTime() - said.at < 10 then sayNow(said) end
+end)
+
 ev:SetScript("OnEvent", function(_, event, text, speaker, _, _, target, _, _, _, _, _, _, guid)
     if not (ns.db and ns.settings.worldSpeech) then return end
     text, speaker = ns.clean(text), ns.clean(speaker)
@@ -90,15 +115,22 @@ ev:SetScript("OnEvent", function(_, event, text, speaker, _, _, target, _, _, _,
         record(speaker, withoutNames(text, target))
         return
     end
-    if not ns.Voice.Get(key) or ns.Voice.IsPlaying() then return end -- never talk over quests and recaps
+    if not ns.Voice.Get(key) then return end
     if lastPlayed[key] and GetTime() - lastPlayed[key] < REPEAT_AFTER then return end
     lastPlayed[key] = GetTime()
-    bubbled[key] = (event == "CHAT_MSG_MONSTER_SAY" or event == "CHAT_MSG_MONSTER_YELL")
-        and GetCVarBool and GetCVarBool("chatBubbles") or false
-    ns.Voice.SetText(key, text)
-    ns.Voice.SetSpeakerSex(speakerSexOf(guid))
-    ns.Voice.Play(key)
-    ns.Voice.SetSpeakerSex(nil)
+    local said = {
+        key = key, text = text, sex = speakerSexOf(guid), at = GetTime(),
+        bubbled = (event == "CHAT_MSG_MONSTER_SAY" or event == "CHAT_MSG_MONSTER_YELL")
+            and GetCVarBool and GetCVarBool("chatBubbles") or false,
+    }
+    if ns.Voice.IsPlaying() then
+        -- never over quests and recaps; but an answer to someone still talking waits its turn (the Stormwind
+        -- kids and their dolly answer each other; the reply used to be lost, thanks Azona)
+        local k = ns.Voice.PlayingKey() or ""
+        if (k:sub(1, 4) == "say:" or k:sub(1, 5) == "sayr:") and #waiting < 3 then waiting[#waiting + 1] = said end
+        return
+    end
+    sayNow(said)
 end)
 for _, e in ipairs({ "CHAT_MSG_MONSTER_SAY", "CHAT_MSG_MONSTER_YELL", "CHAT_MSG_MONSTER_WHISPER", "CHAT_MSG_RAID_BOSS_WHISPER" }) do
     pcall(ev.RegisterEvent, ev, e)

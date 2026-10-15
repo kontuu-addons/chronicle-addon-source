@@ -101,7 +101,7 @@ function S.Build(opts)
         end
         -- greetings recorded because no voiced line matched them
         for id, g in pairs(ns.db.greetings or {}) do
-            if type(g.text) == "string" and not ns.Voice.GreetingKey(id, g.text) then take(greetings, id, g) end
+            if ns.GreetingPending(id, g) then take(greetings, id, g) end -- any page still without a voice
         end
         local lore = ns.Lore or {}
         for title, b in pairs(ns.db.books or {}) do
