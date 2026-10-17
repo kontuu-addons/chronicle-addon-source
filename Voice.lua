@@ -281,7 +281,7 @@ local function start(entry, key)
     playingKey = key
     lastKey = key or lastKey
     startedTime = GetTime()
-    if ns.char and ns.char.heard and key and key:match("^q%d") then ns.char.heard[key] = true end
+    if ns.char and ns.char.heard and key and (key:match("^q%d") or key:sub(1, 4) == "book") then ns.char.heard[key] = true end
     holdBackground()
     holdDuck()
     local willPlay, h = PlaySoundFile("Interface\\AddOns\\" .. entry.p .. "\\Audio\\" .. entry.f, (V.Channel()))

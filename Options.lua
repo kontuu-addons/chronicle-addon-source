@@ -215,6 +215,10 @@ local function build()
 
     section(L["While talking"])
     box("speaker", L["Show the speaker window"], L["The window with the speaker's portrait, subtitles and a stop button that pops up while someone talks. Turn off to only hear the voices. Drag the window to move it."])
+    slider(L["Speaker window background"], L["How dark the speaker window's background is: the box of the window, or the shade behind the cinematic subtitles. All the way left shows only the words."],
+        0, 1, 0.05, function() return ns.settings.speakerBg or 1 end, function(v) ns.settings.speakerBg = v end,
+        function(v) return math.floor(v * 100 + 0.5) .. "%" end, function() return ns.settings.speaker and true or false end)
+    box("lockSpeaker", L["Lock the speaker window"], L["The speaker window and the cinematic subtitles stay where they are and can't be moved by accident. Untick to drag them again."])
     -- the speaker window's look: the window with the portrait, or cinematic (thanks Alche and Hedge)
     do
         local r = newRow(30)

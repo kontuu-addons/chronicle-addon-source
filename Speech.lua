@@ -83,6 +83,11 @@ local function speakerSexOf(guid)
             if ok2 and not (canaccessvalue and not canaccessvalue(sex)) then return sex end
         end
     end
+    -- not on screen (often in a fight): a man or a woman by the speaker's own id, so a pack of thugs doesn't all
+    -- shout in the voice the data lists first, and each one keeps the same voice (thanks Lukey_Q)
+    local ok, last = pcall(function() return tonumber(guid:sub(-1), 16) end)
+    if ok and last then return last % 2 == 0 and 2 or 3 end
+    return math.random(2, 3)
 end
 
 -- chatter that came while other chatter was talking: played after it, if still fresh (10 seconds)

@@ -86,15 +86,27 @@ local function onPage()
                 local heard = ns.char.heard
                 if wholeBook ~= title or #keys == 0 or (ns.settings.skipHeard and heard[keys[1]]) then return end
                 for _, k in ipairs(keys) do heard[k] = true end
-                ns.Voice.PlayQueue(keys)
+                -- someone else talking (a quest giver, a recap) finishes first; the book follows
+                local playing = ns.Voice.PlayingKey()
+                if playing and playing:sub(1, 4) ~= "book" then
+                    for _, k in ipairs(keys) do ns.Voice.Enqueue(k) end
+                else
+                    ns.Voice.PlayQueue(keys)
+                end
             end)
         end
     elseif current and ns.settings.books and ns.Voice.Get(current) then
         local heard = ns.char.heard
         if not (ns.settings.skipHeard and heard[current]) then
-            heard[current] = true
             ns.Voice.SetText(current, text)
-            ns.Voice.Play(current)
+            -- turning the page replaces the page being read; anything else that is talking (a quest giver, a recap)
+            -- is not cut off: the page waits its turn. It counts as heard once it starts (Voice.lua; thanks Pylo)
+            local playing = ns.Voice.PlayingKey()
+            if playing and playing ~= current and playing:sub(1, 4) ~= "book" then
+                ns.Voice.Enqueue(current)
+            else
+                ns.Voice.Play(current)
+            end
         end
     end
     update()
@@ -128,3 +140,23 @@ function makeButton()
     btn:Hide()
 end
 table.insert(ns.onLogin, makeButton)
+
+-- books read before the Library existed are only in "heard": put them on the shelf too (time unknown: 0, so they
+-- sort after the ones read since; thanks Pylo)
+table.insert(ns.onLogin, function()
+    local heard, books = ns.char and ns.char.heard, ns.Lore and ns.Lore.books
+    if not (heard and books) then return end
+    ns.char.library = ns.char.library or {}
+    -- a page shared by several titles (the same text on different objects) can't tell which one was read
+    local titlesOf = {}
+    for _, pages in pairs(books) do
+        for _, page in ipairs(pages) do titlesOf[page[1]] = (titlesOf[page[1]] or 0) + 1 end
+    end
+    for title, pages in pairs(books) do
+        if not ns.char.library[title] then
+            for _, page in ipairs(pages) do
+                if heard[page[1]] and titlesOf[page[1]] == 1 then ns.char.library[title] = 0; break end
+            end
+        end
+    end
+end)

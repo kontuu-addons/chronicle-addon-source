@@ -194,7 +194,26 @@ local function onGreeting(kind)
     local unknownNPC = not (lore.npcs and npc.name and lore.npcs[npc.name])
     local newText = lore.greet and lore.greet[npc.npcID] ~= nil
     ns.db.greetings = ns.db.greetings or {}
-    if not ns.english then ns.Voice.OnGreeting(npc.npcID, key, text, npc.sex == 3); return end
+    if not ns.english then
+        -- another client language: every greeting is kept in its own table for /lore share (none has a voice in this
+        -- language yet), the start of voices in German and French
+        ns.db.loc = ns.db.loc or {}
+        ns.db.loc.greetings = ns.db.loc.greetings or {}
+        local g = ns.db.loc.greetings[npc.npcID] or {}
+        g.name, g.sex, g.creature, g.kind = npc.name, npc.sex, npc.creature, npc.kind
+        if not g.text or g.text == text then
+            g.text = text
+        else
+            g.more = g.more or {}
+            local have = false
+            for _, t in ipairs(g.more) do if t == text then have = true end end
+            if not have and #g.more < 5 then g.more[#g.more + 1] = text end
+        end
+        g.zone, g.by = where(), reader()
+        ns.db.loc.greetings[npc.npcID] = g
+        ns.Voice.OnGreeting(npc.npcID, key, text, npc.sex == 3)
+        return
+    end
     -- once per session, greetings that have a voice by now are let go: the limit below counts only the ones still
     -- waiting, so long-time recorders keep recording (Turak Runetotem's talent page was never kept; thanks Alche)
     if not prunedGreetings then
@@ -439,6 +458,19 @@ ev:SetScript("OnEvent", function(_, event, ...)
                 ns.db.noTitle[id] = true
             end
         end
+    elseif event == "QUEST_REMOVED" then
+        -- also fires for a hand-in: wait, then only an abandoned quest (not done, not flagged) leaves the active list
+        -- (thanks Pylo)
+        local id = ...
+        if type(id) == "number" and ns.char.active[id] then
+            C_Timer.After(1, function()
+                if ns.char.done[id] then return end
+                local ok, flagged = pcall(C_QuestLog.IsQuestFlaggedCompleted, id)
+                if ok and flagged then return end
+                ns.char.active[id] = nil
+                refreshJournal()
+            end)
+        end
     elseif event == "QUEST_TURNED_IN" then
         local id = ...
         if type(id) == "number" and id > 0 then
@@ -450,7 +482,7 @@ ev:SetScript("OnEvent", function(_, event, ...)
     end
 end)
 
-for _, e in ipairs({ "GOSSIP_SHOW", "QUEST_GREETING", "QUEST_DETAIL","QUEST_PROGRESS", "QUEST_COMPLETE", "QUEST_FINISHED", "QUEST_ACCEPTED", "QUEST_TURNED_IN", "QUEST_DATA_LOAD_RESULT" }) do
+for _, e in ipairs({ "GOSSIP_SHOW", "QUEST_GREETING", "QUEST_DETAIL","QUEST_PROGRESS", "QUEST_COMPLETE", "QUEST_FINISHED", "QUEST_ACCEPTED", "QUEST_REMOVED", "QUEST_TURNED_IN", "QUEST_DATA_LOAD_RESULT" }) do
     pcall(ev.RegisterEvent, ev, e)
 end
 

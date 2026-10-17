@@ -106,7 +106,10 @@ local function create()
         f:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", right * s, top * s)
         ns.settings[f.cine and "speakerPosCine" or "speakerPos"] = { "TOPRIGHT", "BOTTOMLEFT", right * s, top * s }
     end
-    f:SetScript("OnDragStart", function(self) if not self.dockedTo then self:StartMoving() end end)
+    -- locked (option) it stays put, so a stray drag can't move it (thanks Hedge)
+    f:SetScript("OnDragStart", function(self)
+        if not self.dockedTo and not ns.settings.lockSpeaker then self:StartMoving() end
+    end)
     f:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
         if not self.dockedTo then pin() end
@@ -373,7 +376,8 @@ local function applyStyle(compact)
     local cine = ns.settings.speakerStyle == "cinematic"
     local changed = f.cine ~= cine
     f.cine = cine
-    for _, t in ipairs(f.shade) do t:SetShown(cine) end
+    local bg = ns.settings.speakerBg or 1 -- the background's strength (option), 0 = only the words
+    for _, t in ipairs(f.shade) do t:SetShown(cine and bg > 0); t:SetAlpha(bg) end
     if cine then
         f:SetBackdropColor(0, 0, 0, 0); f:SetBackdropBorderColor(0, 0, 0, 0)
         f.window:Hide(); f.title:Hide()
@@ -388,7 +392,7 @@ local function applyStyle(compact)
         f.sub:SetTextColor(1, 0.97, 0.9); f.sub:SetShadowOffset(1, -1); f.sub:SetShadowColor(0, 0, 0, 1)
         f.progress:ClearAllPoints(); f.progress:SetPoint("BOTTOM", 0, 6); f.progress:SetSize(180, 2)
     else
-        f:SetBackdropColor(0.07, 0.055, 0.04, 0.92); f:SetBackdropBorderColor(0.6, 0.48, 0.25, 1)
+        f:SetBackdropColor(0.07, 0.055, 0.04, 0.92 * bg); f:SetBackdropBorderColor(0.6, 0.48, 0.25, bg)
         f.title:Show()
         f.name:SetJustifyH("LEFT")
         f.about:ClearAllPoints(); f.about:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", 0, -8); f.about:SetPoint("RIGHT", -12, 0)

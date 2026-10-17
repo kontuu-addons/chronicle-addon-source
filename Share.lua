@@ -108,6 +108,29 @@ function S.Build(opts)
             if not (lore.books and lore.books[title]) then take(books, title, b) end -- voiced by a newer release
         end
         for name, r in pairs(ns.db.speech or {}) do take(speech, name, r) end
+    elseif not opts.sync then
+        -- another client language: the quest pages and greetings as this game shows them, for voices in that language.
+        -- What went out once isn't sent again; a share too big for one go continues next time.
+        ns.db.loc = ns.db.loc or {}
+        local sent = ns.db.loc.sent or {}
+        ns.db.loc.sent = sent
+        for id, q in pairs(ns.db.quests) do
+            if (q.detail or q.progress or q.complete) and not sent["q" .. id] and not q.fromParty then
+                local e = {}
+                for _, k in ipairs(FIELDS) do e[k] = q[k] end
+                local before = n
+                take(quests, id, e)
+                if n > before then sent["q" .. id] = true end
+            end
+        end
+        for id, g in pairs(ns.db.loc.greetings or {}) do
+            local mark = "g" .. id .. ":" .. (#(g.more or {}))
+            if not sent[mark] then
+                local before = n
+                take(greetings, id, g)
+                if n > before then sent[mark] = true end
+            end
+        end
     end
     local version, build = GetBuildInfo()
     local data = { v = 1, loc = GetLocale(), client = version .. "." .. build,
@@ -169,7 +192,7 @@ local function collect()
     local text, n = S.Build()
     if n == 0 then
         ns.pr(ns.english and L["everything you have recorded already has voiceover. Nothing to share."]
-            or L["sharing needs an English game client: the voices are English."])
+            or L["nothing new to share since your last share. Play on and share again later."])
         return nil
     end
     return text, n

@@ -79,6 +79,8 @@ local DEFAULTS = {
     journalScale = 1,    -- the journal's size
     stopOnClose = false, -- keep talking after the quest window closes (works with auto-accept addons)
     speaker = true,      -- show the "now speaking" bar
+    lockSpeaker = false, -- the speaker window can't be dragged
+    speakerBg = 1,       -- how strong the speaker window's background is (0 = only the words)
     recapAfterTurnIn = true, -- narrator reads the story recap after you hand in a quest
     minimap = true,      -- minimap button
     minimapFree = false, -- the button anywhere on the screen instead of on the minimap edge
@@ -91,7 +93,7 @@ local DEFAULTS = {
     ttsFallback = false, -- read lines nobody has voiced yet with the game's built-in text-to-speech
     newMarker = true,    -- "New in WoW: Forever" on the quest window
     books = true,        -- the narrator reads books, letters and plaques
-    reactions = true,    -- your own character says a short line after some turn-ins
+    reactions = false,   -- your own character says a short line after some turn-ins (off by default)
     mapPins = true,      -- story chapters on the world map (the books)
     storyPanel = true,   -- the zone's story panel on the world map, and the chapter count on continents
     showLeft = false,    -- quests still to do and where undiscovered chapters start (journal, map)
@@ -321,6 +323,13 @@ ev:SetScript("OnEvent", function(_, event, arg)
                     ns.pr(L["the voices are on again (the Story Journal edition had switched them off). Options > Journal only turns them off."])
                 end)
             end
+        end
+
+        -- your character's own lines after a turn-in were too much for most: off for everyone once, on for whoever
+        -- turns them back on under Options
+        if not ns.db.reactionsOffOnce then
+            ns.db.reactionsOffOnce = true
+            ns.settings.reactions = false
         end
 
         -- the voices and the story texts are English: on other clients Chronicle starts as a journal only, once

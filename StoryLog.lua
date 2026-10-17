@@ -165,8 +165,10 @@ local function update()
     if id then arc, step = chapterOf(id) end
     if not arc then panel:Hide(); shownFor = nil; return end
     local text, key = storySoFar(arc, step)
-    if shownFor ~= id then
-        shownFor = id
+    -- redrawn when the text or the voice changes too (a step handed in, "Journal only"), not only for another quest
+    local sig = id .. "|" .. tostring(key) .. "|" .. tostring(ns.settings.journalOnly)
+    if shownFor ~= sig then
+        shownFor = sig
         panel.title:SetText(arc.title)
         panel.step:SetText((L["Step %d of %d"]):format(step, #arc.quests))
         panel.body:SetText(text or "")
