@@ -12,6 +12,9 @@ local PREFIX = "CHRONICLE"
 local CHUNK = 230         -- bytes of payload per message (addon messages are limited to 255)
 local SEND_EVERY = 1.1    -- seconds between messages: stays under the server's addon message throttle
 local MAX_CHUNKS = 60     -- one transfer is at most ~14 KB; the rest goes with the next party
+-- the records' budget leaves room for the table around them (version, client, the four lists), or the transfer comes
+-- to more than MAX_CHUNKS pieces and every receiver drops it
+local BUDGET = CHUNK * MAX_CHUNKS - 256
 local RESEND_AFTER = 600  -- seconds before the same party gets our recordings again
 local STALE = 120         -- seconds before a half-received transfer is dropped
 local LIMIT = { quests = 1000, greetings = 400, books = 100, speech = 200 }
@@ -198,7 +201,7 @@ local function send()
     ns.db.syncSent = sent
     for k, t in pairs(sent) do if time() - t >= RESEND_AFTER then sent[k] = nil end end
     if sent[who] then return end
-    local text, n = ns.Share.Build({ sync = true, maxBytes = CHUNK * MAX_CHUNKS })
+    local text, n = ns.Share.Build({ sync = true, maxBytes = BUDGET })
     if n == 0 then return end
     sent[who] = time()
 
