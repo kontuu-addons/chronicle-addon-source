@@ -487,12 +487,15 @@ local function isGreeting(key) return key and (key:sub(1, 4) == "gos:" or key:su
 -- "Greetings" is over instead of talking over it. Walking away before then cancels it.
 local GAME_GREETING = 1.5
 local lastGUID, ended, endTime = nil, false, 0
+local waitID = 0 -- the page or greeting asked for last: one still waiting for the game's greeting plays only if it is that
 local function npcGUID()
     local g = UnitGUID("npc") -- nil for quests from items: no game greeting then
     if g and canaccessvalue and not canaccessvalue(g) then return nil end
     return g
 end
 local function afterGameGreeting(fn)
+    waitID = waitID + 1
+    local mine = waitID
     local guid = npcGUID()
     if guid and canaccessvalue and not canaccessvalue(guid) then guid = nil end -- (npcGUID already does; the checker wants it here)
     -- gossip closing into a quest page (same frame) is still the same conversation
@@ -500,6 +503,8 @@ local function afterGameGreeting(fn)
     lastGUID, ended = guid, false
     if not fresh or (ns.GreetingsMuted and ns.GreetingsMuted()) or ns.settings.journalOnly then return fn() end
     C_Timer.After(GAME_GREETING, function()
+        -- clicked on to another page in the meantime: that one has played already, this one is out of date
+        if waitID ~= mine then return end
         local now = npcGUID()
         if now and canaccessvalue and not canaccessvalue(now) then now = nil end
         if now == guid then fn() end
