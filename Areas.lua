@@ -20,7 +20,7 @@ local function onArea()
         end
         return
     end
-    if ns.Voice.IsPlaying() then return end
+    if ns.Voice.IsPlaying() or ns.Voice.Paused() then return end
     ns.char.areaSeen[key] = time()
     ns.Voice.Play(key)
 end

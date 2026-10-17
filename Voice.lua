@@ -202,9 +202,11 @@ V.ReleaseDuck = releaseDuck
 
 table.insert(ns.onLogin, function() releaseDuck(true) end)
 
+local paused -- Pause: the line that was talking and the ones waiting after it, for Resume
+
 -- Refresh anything that shows play/stop state.
 local function changed()
-    if not handle and ns.TalkingHead then pcall(ns.TalkingHead.Hide) end
+    if not handle and ns.TalkingHead then pcall(paused and ns.TalkingHead.ShowPaused or ns.TalkingHead.Hide) end
     if not handle then
         C_Timer.After(1, function()
             if handle then return end
@@ -267,7 +269,7 @@ function V.Speak(text, female)
 end
 
 function V.Stop()
-    queue = nil
+    queue, paused = nil, nil
     stopSound()
 end
 
@@ -277,6 +279,7 @@ local lastKey -- the last line that played, for Replay
 
 local startedTime = 0
 local function start(entry, key)
+    paused = nil -- something new is talking: the paused line is let go
     stopSound()
     playingKey = key
     lastKey = key or lastKey
@@ -334,6 +337,29 @@ function V.Skip()
     end
 end
 
+-- Pause: the game can't hold a sound halfway, so the line stops and is kept, with everything waiting after it.
+-- Resume plays it again from its start and carries on with the rest (thanks Rhiload). Talking to someone or
+-- opening a quest in between lets the pause go; chatter around you and place lines wait until you resume.
+function V.Pause()
+    if not (handle and playingKey) then return false end
+    local keys = { playingKey }
+    for _, k in ipairs(queue or {}) do keys[#keys + 1] = k end
+    paused = { keys = keys, owner = owner }
+    queue = nil
+    stopSound()
+    return true
+end
+
+function V.Paused() return paused ~= nil end
+
+function V.Resume()
+    local p = paused
+    if not p then return false end
+    paused = nil
+    if not V.PlayQueue(p.keys, p.owner) then changed() return false end
+    return true
+end
+
 -- Play the last line again (the speaker window's replay button, /lore replay). False when nothing has played yet.
 function V.Replay()
     if not lastKey or not V.Get(lastKey) then return false end
@@ -375,6 +401,10 @@ end
 
 function V.Enqueue(key)
     if not V.Get(key) then return false end
+    if paused then -- a recap after a turn-in, a book: after the paused lines
+        paused.keys[#paused.keys + 1] = key
+        return true
+    end
     if handle then
         queue = queue or {}
         queue[#queue + 1] = key

@@ -2650,7 +2650,7 @@ function J.SetTab(which, keepSelection)
 end
 
 function J.OnVoiceChanged()
-    if tell.keys and not ns.Voice.IsPlaying() then -- the chronicle stopped: after a chapter (pause), or at its end
+    if tell.keys and not ns.Voice.IsPlaying() and not ns.Voice.Paused() then -- the chronicle stopped: after a chapter (pause), or at its end
         if ns.settings.chroniclePause and tell.i < #tell.keys then tell.waiting = true
         else tell.keys, tell.i, tell.waiting = nil, 0, false end
     end

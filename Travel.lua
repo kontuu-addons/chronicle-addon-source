@@ -42,7 +42,7 @@ end
 local function onGhost()
     if not (ns.settings.ghostQuips and not ns.settings.journalOnly and UnitIsGhost("player")) then return end
     local lines = ns.Lore and ns.Lore.ghost
-    if not lines or #lines == 0 or ns.Voice.IsPlaying() then return end
+    if not lines or #lines == 0 or ns.Voice.IsPlaying() or ns.Voice.Paused() then return end
     ns.char.ghost = ns.char.ghost or { at = 0, recent = {} }
     local g = ns.char.ghost
     if time() - (g.at or 0) < GHOST_COOLDOWN or math.random() > GHOST_CHANCE then return end

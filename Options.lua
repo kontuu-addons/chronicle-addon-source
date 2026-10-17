@@ -210,13 +210,14 @@ local function build()
         function() return ns.settings.greetings and not ns.settings.journalOnly end)
     box("books", L["Read books and letters"], L["The narrator reads the page you open. Turning the page reads the next one."])
     box("worldSpeech", L["NPCs talking in the world"], L["Speech bubbles and yells, like guards, villains and mobs. Only when nothing else is talking, and not the same line twice within two minutes."])
+    box("mixedSure", L["Quiet when unsure of man or woman"], L["Some enemies come as both men and women, like Defias and Twilight Thugs. When the addon can't see which one is talking (often in a fight), it picks a voice. Tick to stay quiet instead. Enemy nameplates help it see them."])
     box("ghostQuips", L["A word on the way back"], L["When you run back to your body as a ghost, the narrator now and then says a short line. At most once every 15 minutes."])
     box("reactions", L["My character reacts"], L["Now and then your own character says a short line after handing in a quest, in a voice for your race and gender."])
 
     section(L["While talking"])
     box("speaker", L["Show the speaker window"], L["The window with the speaker's portrait, subtitles and a stop button that pops up while someone talks. Turn off to only hear the voices. Drag the window to move it."])
-    slider(L["Speaker window background"], L["How dark the speaker window's background is: the box of the window, or the shade behind the cinematic subtitles. All the way left shows only the words."],
-        0, 1, 0.05, function() return ns.settings.speakerBg or 1 end, function(v) ns.settings.speakerBg = v end,
+    slider(L["Window background"], L["How dark the speaker window's background is: the box of the window, or the shade behind the cinematic subtitles. All the way left shows only the words."],
+        0, 1, 0.05, function() return ns.settings.speakerBg or 1 end, function(v) ns.settings.speakerBg = v; if ns.TalkingHead then ns.TalkingHead.Restyle() end end,
         function(v) return math.floor(v * 100 + 0.5) .. "%" end, function() return ns.settings.speaker and true or false end)
     box("lockSpeaker", L["Lock the speaker window"], L["The speaker window and the cinematic subtitles stay where they are and can't be moved by accident. Untick to drag them again."])
     -- the speaker window's look: the window with the portrait, or cinematic (thanks Alche and Hedge)
@@ -313,6 +314,19 @@ local function build()
     link("Discord", "discord.gg/NKevry7mY"):SetPoint("RIGHT", footer, "CENTER", -12, 0)
     link("Ko-fi", "ko-fi.com/kontuu"):SetPoint("LEFT", footer, "CENTER", 12, 0)
 
+    -- every option back to how it came, after a yes; the journal, what you've heard and where windows sit stay
+    local reset = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    reset:SetText(L["Reset to defaults"]); reset:SetSize(math.max(140, reset:GetFontString():GetStringWidth() + 24), 22)
+    reset:SetPoint("TOP", footer, "BOTTOM", 0, -8)
+    reset:SetScript("OnClick", function()
+        StaticPopupDialogs.CHRONICLE_RESET = StaticPopupDialogs.CHRONICLE_RESET or {
+            text = L["Put every Chronicle option back to its default? Your journal, the lines you've heard and where your windows sit are kept."],
+            button1 = YES, button2 = NO, timeout = 0, whileDead = true, hideOnEscape = true,
+            OnAccept = function() O.ResetDefaults() end,
+        }
+        StaticPopup_Show("CHRONICLE_RESET")
+    end)
+
     local function layout(w)
         local cols = w >= 700 and 2 or 1
         local gap = 36
@@ -336,7 +350,7 @@ local function build()
         footer:ClearAllPoints()
         footer:SetPoint("TOPLEFT", content, "TOPLEFT", 12, -tallest - 4)
         footer:SetWidth(w - 24)
-        content:SetHeight(tallest + 40)
+        content:SetHeight(tallest + 72)
     end
     scroll:SetScript("OnSizeChanged", function(_, w)
         content:SetWidth(w)
@@ -352,6 +366,20 @@ local function build()
     Settings.RegisterAddOnCategory(category)
     O.category = category
     O.page = page
+end
+
+-- Options > Reset to defaults. Journal only stays as the edition or game language set it (Story Journal, non-English).
+function O.ResetDefaults()
+    local keepJournalOnly = ns.journalEdition or not ns.english
+    for k, v in pairs(ns.DEFAULTS) do
+        if not (k == "journalOnly" and keepJournalOnly) then ns.settings[k] = v end
+    end
+    ns.settings.channel, ns.settings.speakerStyle, ns.settings.questTabs = nil, nil, nil
+    for _, fn in pairs(ON_CHANGE) do pcall(fn) end
+    if ns.Voice.UpdateQuestButton then ns.Voice.UpdateQuestButton() end
+    if ns.TalkingHead and ns.TalkingHead.Restyle then ns.TalkingHead.Restyle() end
+    if O.Refresh then O.Refresh() end
+    ns.pr(L["options are back to their defaults."])
 end
 
 -- Change a setting from code (the public API), with the same follow-up as clicking its box.

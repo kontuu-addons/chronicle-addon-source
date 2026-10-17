@@ -86,8 +86,8 @@ local function speakerSexOf(guid)
     -- not on screen (often in a fight): a man or a woman by the speaker's own id, so a pack of thugs doesn't all
     -- shout in the voice the data lists first, and each one keeps the same voice (thanks Lukey_Q)
     local ok, last = pcall(function() return tonumber(guid:sub(-1), 16) end)
-    if ok and last then return last % 2 == 0 and 2 or 3 end
-    return math.random(2, 3)
+    if ok and last then return last % 2 == 0 and 2 or 3, true end
+    return math.random(2, 3), true
 end
 
 -- chatter that came while other chatter was talking: played after it, if still fresh (10 seconds)
@@ -105,7 +105,7 @@ queueWatch:SetScript("OnUpdate", function(_, dt)
     queueWait = queueWait - dt
     if queueWait > 0 or #waiting == 0 then return end
     queueWait = 0.2
-    if ns.Voice.IsPlaying() then return end
+    if ns.Voice.IsPlaying() or ns.Voice.Paused() then return end
     local said = table.remove(waiting, 1)
     if said and GetTime() - said.at < 10 then sayNow(said) end
 end)
@@ -122,12 +122,16 @@ ev:SetScript("OnEvent", function(_, event, text, speaker, _, _, target, _, _, _,
     end
     if not ns.Voice.Get(key) then return end
     if lastPlayed[key] and GetTime() - lastPlayed[key] < REPEAT_AFTER then return end
+    local sex, guessed = speakerSexOf(guid)
+    -- option: someone who comes as a man or a woman, and the addon can't see which one this is: stay quiet
+    if guessed and ns.settings.mixedSure and (ns.audio[key .. ":m"] or ns.audio[key .. ":w"]) then return end
     lastPlayed[key] = GetTime()
     local said = {
-        key = key, text = text, sex = speakerSexOf(guid), at = GetTime(),
+        key = key, text = text, sex = sex, at = GetTime(),
         bubbled = (event == "CHAT_MSG_MONSTER_SAY" or event == "CHAT_MSG_MONSTER_YELL")
             and GetCVarBool and GetCVarBool("chatBubbles") or false,
     }
+    if ns.Voice.Paused() then return end -- you paused to talk: the chatter around you doesn't break in
     if ns.Voice.IsPlaying() then
         -- never over quests and recaps; but an answer to someone still talking waits its turn (the Stormwind
         -- kids and their dolly answer each other; the reply used to be lost, thanks Azona)

@@ -7,13 +7,14 @@ ns.onLogin = {}
 
 -- Key bindings (Bindings.xml), so the voices and the journal work from a controller or a keyboard key.
 BINDING_HEADER_CHRONICLE = "Chronicle"
-BINDING_NAME_CHRONICLE_PLAYSTOP = L["Play or stop the voice"]
+BINDING_NAME_CHRONICLE_PLAYSTOP = L["Play, pause or resume the voice"]
 BINDING_NAME_CHRONICLE_SKIP = L["Skip to the next line"]
 BINDING_NAME_CHRONICLE_JOURNAL = L["Open the journal"]
 _G.ChronicleBinding_PlayStop = function()
     local V = ns.Voice
     if not V then return end
-    if V.IsPlaying() then V.Stop() return end
+    if V.Paused() then V.Resume() return end
+    if V.IsPlaying() then V.Pause() return end
     local key = V.LastKey() or ns.lastKey -- the last line heard, or the quest window's line
     if key then V.Play(key) end
 end
@@ -46,7 +47,8 @@ padWatch:SetScript("OnEvent", updatePadClose)
 
 -- Skip: the next line; with nothing playing it closes the speaker window (no mouse needed on a controller)
 _G.ChronicleBinding_Skip = function()
-    if ns.Voice and ns.Voice.IsPlaying() then ns.Voice.Skip()
+    if ns.Voice and ns.Voice.Paused() then ns.Voice.Stop(); if ns.TalkingHead then ns.TalkingHead.Hide(true) end
+    elseif ns.Voice and ns.Voice.IsPlaying() then ns.Voice.Skip()
     elseif ns.TalkingHead then ns.TalkingHead.Hide(true) end
 end
 _G.ChronicleBinding_Journal = function() if ns.Journal then ns.Journal.Toggle() end end
@@ -107,6 +109,7 @@ local DEFAULTS = {
     levelMilestones = true, -- every 10th level: a word from the narrator and where new stories open up
     muteGameGreetings = true, -- silence the game's own "Greetings"/"Farewell" NPC voices so they don't talk over ours
     questMarkers = false, -- "!" at quest givers with quests for you, "?" where to hand in (off when Questie runs)
+    mixedSure = false,   -- NPCs that come as men and women: quiet when the speaker can't be seen (else a guess)
     worldSpeech = true,  -- NPCs speaking out loud in the world (speech bubbles, yells)
     subtitles = true,    -- show the text of what is being said in the talking head
     partySync = true,    -- swap unvoiced recordings with party members who also run Chronicle

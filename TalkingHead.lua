@@ -159,27 +159,31 @@ local function create()
     f.shade = {}
     -- one row of the band: its top at the frame's edge e1 (TOP or BOTTOM) + y1, its bottom at e2 + y2, darkness a
     local function shadeRow(e1, y1, e2, y2, a)
-        local row = {}
-        for i, side in ipairs({ "left", "mid", "right" }) do
+        local function strip(alpha)
             local t = f:CreateTexture(nil, "BACKGROUND")
-            t:SetTexture("Interface\\Buttons\\WHITE8x8")
-            if side == "mid" then
-                t:SetVertexColor(0, 0, 0, a)
-            elseif t.SetGradient and CreateColor then
-                local clear, dark = CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, a)
-                pcall(t.SetGradient, t, "HORIZONTAL", side == "left" and clear or dark, side == "left" and dark or clear)
-            else
-                t:SetVertexColor(0, 0, 0, a * 0.5)
-            end
+            t:SetColorTexture(0, 0, 0, alpha)
             t:Hide()
-            row[i] = t
             f.shade[#f.shade + 1] = t
+            return t
         end
-        row[1]:SetPoint("TOPLEFT", f, e1 .. "LEFT", 0, y1); row[1]:SetPoint("BOTTOMLEFT", f, e2 .. "LEFT", 0, y2)
-        row[1]:SetWidth(140)
-        row[3]:SetPoint("TOPRIGHT", f, e1 .. "RIGHT", 0, y1); row[3]:SetPoint("BOTTOMRIGHT", f, e2 .. "RIGHT", 0, y2)
-        row[3]:SetWidth(140)
-        row[2]:SetPoint("TOPLEFT", row[1], "TOPRIGHT"); row[2]:SetPoint("BOTTOMRIGHT", row[3], "BOTTOMLEFT")
+        -- the sides fade out in thin strips (the game's gradient call drew nothing on some clients: a hard black box)
+        local STEPS, W = 14, 10
+        local left, right
+        for k = 1, STEPS do
+            local alpha = a * k / (STEPS + 1)
+            local l, r = strip(alpha), strip(alpha)
+            l:SetWidth(W); r:SetWidth(W)
+            if left then
+                l:SetPoint("TOPLEFT", left, "TOPRIGHT"); l:SetPoint("BOTTOMLEFT", left, "BOTTOMRIGHT")
+                r:SetPoint("TOPRIGHT", right, "TOPLEFT"); r:SetPoint("BOTTOMRIGHT", right, "BOTTOMLEFT")
+            else
+                l:SetPoint("TOPLEFT", f, e1 .. "LEFT", 0, y1); l:SetPoint("BOTTOMLEFT", f, e2 .. "LEFT", 0, y2)
+                r:SetPoint("TOPRIGHT", f, e1 .. "RIGHT", 0, y1); r:SetPoint("BOTTOMRIGHT", f, e2 .. "RIGHT", 0, y2)
+            end
+            left, right = l, r
+        end
+        local mid = strip(a)
+        mid:SetPoint("TOPLEFT", left, "TOPRIGHT"); mid:SetPoint("BOTTOMRIGHT", right, "BOTTOMLEFT")
     end
     -- the frame itself, then six thin steps above and below it that get lighter
     shadeRow("TOP", 0, "BOTTOM", 0, 0.55)
@@ -305,6 +309,7 @@ local function create()
     f.stop = stop
     -- click: next line in the queue (the last one closes it); shift-click: stop everything
     local function skip()
+        if ns.Voice.Paused() then ns.Voice.Stop(); T.Hide(true) return end
         if not current then T.Hide(true) return end -- the line already ended (kept up for Good / Bad)
         if IsShiftKeyDown() then ns.Voice.Stop() else ns.Voice.Skip() end
     end
@@ -328,12 +333,51 @@ local function create()
     end)
     replay:SetScript("OnLeave", function() GameTooltip:Hide() end)
     f.replay = replay
+    -- pause: two bars while someone is talking, a play arrow while paused; hidden when nothing is (thanks Rhiload)
+    local pause = CreateFrame("Button", nil, f)
+    pause:SetSize(16, 16); pause:SetPoint("RIGHT", replay, "LEFT", -2, 0)
+    pause:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    pause.bars = {}
+    for i, x in ipairs({ -3, 3 }) do
+        local bar = pause:CreateTexture(nil, "ARTWORK")
+        bar:SetColorTexture(1, 0.82, 0, 1); bar:SetSize(3, 10); bar:SetPoint("CENTER", x, 0)
+        pause.bars[i] = bar
+    end
+    pause.play = pause:CreateTexture(nil, "ARTWORK")
+    pause.play:SetTexture("Interface\\ChatFrame\\ChatFrameExpandArrow")
+    pause.play:SetSize(14, 14); pause.play:SetPoint("CENTER", 1, 0)
+    pause.update = function()
+        local paused = ns.Voice.Paused()
+        pause:SetShown(paused or current ~= nil)
+        for _, bar in ipairs(pause.bars) do bar:SetShown(not paused) end
+        pause.play:SetShown(paused)
+    end
+    pause:SetScript("OnClick", function()
+        if ns.Voice.Paused() then ns.Voice.Resume() else ns.Voice.Pause() end
+    end)
+    pause:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        if ns.Voice.Paused() then
+            GameTooltip:SetText(L["Resume"], 1, 1, 1)
+            GameTooltip:AddLine(L["Plays the line again from its start, then the rest"], 0.8, 0.8, 0.8)
+        else
+            GameTooltip:SetText(L["Pause"], 1, 1, 1)
+            GameTooltip:AddLine(L["Keeps this line and the ones waiting after it"], 0.8, 0.8, 0.8)
+        end
+        GameTooltip:Show()
+    end)
+    pause:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    f.pause = pause
+    f.pausedText = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    f.pausedText:SetPoint("RIGHT", pause, "LEFT", -4, 0)
+    f.pausedText:SetText(L["Paused"])
+    f.pausedText:Hide()
     -- right-click anywhere on the window does the same, wherever the X ends up (thanks timmeh)
     f:SetScript("OnMouseUp", function(_, button) if button == "RightButton" then skip() end end)
-    -- cinematic: the X and replay stay faint until the mouse is over the band
+    -- cinematic: the buttons stay faint until the mouse is over the band
     f.dimButtons = function()
         local a = (f.cine and not f:IsMouseOver()) and 0.3 or 1
-        f.stop:SetAlpha(a); f.replay:SetAlpha(a)
+        f.stop:SetAlpha(a); f.replay:SetAlpha(a); f.pause:SetAlpha(a)
     end
     f:SetScript("OnEnter", f.dimButtons)
     f:SetScript("OnLeave", f.dimButtons)
@@ -456,6 +500,7 @@ function T.Show(entry, key)
     if not f then create() end
     lingerToken = lingerToken + 1
     current, startedAt, currentKey = entry, GetTime(), key
+    f.pausedText:Hide(); f.pause.update()
     local subtitle = ns.settings.subtitles and ns.Voice.Subtitle(key) or nil
     if ns.Speech and ns.Speech.Bubbled(key) then subtitle = nil end -- the bubble over their head has the words
     local compact = not (subtitle and subtitle ~= "")
@@ -577,12 +622,25 @@ end
 -- the speaker window, while it is up (the tour points at it)
 function T.Frame() return f and f:IsShown() and f or nil end
 
+-- an option changed (the background slider): the window on screen takes it at once, not at the next line
+function T.Restyle() if f then applyStyle(f.compact) end end
+
+-- Paused: the window stays up with the words where they were, and the pause button turns into resume
+function T.ShowPaused()
+    lingerToken = lingerToken + 1
+    if not (f and f:IsShown()) then return end
+    current, startedAt = nil, nil
+    pcall(f.model.SetAnimation, f.model, 0)
+    f.pausedText:Show(); f.pause.update()
+end
+
 function T.Hide(now)
     lingerToken = lingerToken + 1
     -- checking the voices: stay up a few seconds after the line ends, so a short line can still be marked
     if not now and f and f:IsShown() and currentKey and ns.settings.checkVoices then
         current, startedAt, pages = nil, nil, nil
         f.progress:SetValue(1)
+        f.pause.update()
         local token = lingerToken
         C_Timer.After(6, function()
             if token == lingerToken then T.Hide(true) end
