@@ -81,7 +81,7 @@ function Tour.Start()
           text = L["The book on the minimap opens your journal: each zone's story, your chapters with short recaps, and the Library of books you have read. Right-click it for the options. Also /lore."],
           prepare = function() return ns.Minimap and ns.Minimap.Button and ns.Minimap.Button() end },
         { title = L["Who is talking"], side = "above", needed = true,
-          text = L["When someone speaks, this window shows who it is and the words. The X skips a line, the arrow plays the last one again, and you can drag it anywhere. For subtitles like a film, choose Cinematic under Options."],
+          text = L["When someone speaks, this window shows who it is and the words. The row below has back, stop or play, next and replay; the X closes the window and stops everything. Drag it anywhere. For subtitles like a film, choose Cinematic under Options."],
           prepare = function()
               if not (ns.Voice and ns.Voice.Test and ns.Voice.Test()) then return nil end
               return ns.TalkingHead and ns.TalkingHead.Frame and ns.TalkingHead.Frame()
