@@ -3833,6 +3833,17 @@ local function create()
     pageScroll:SetPoint("TOPLEFT", 22, -18); pageScroll:SetPoint("BOTTOMRIGHT", -30, 14) -- the scrollbar on flat paper, off the curled edge
     page = CreateFrame("Frame", nil, pageScroll); page:SetSize(W - LIST_W - 74, 10)
     pageScroll:SetScrollChild(page)
+    -- the game's inner frame around the list and the page, like the panels inside its own windows (Professions); the
+    -- list's frame goes with the list (the Options and Share tabs take its place)
+    if styled then
+        local box = CreateFrame("Frame", nil, frame)
+        box:SetPoint("TOPLEFT", listScroll, "TOPLEFT", -4, 4); box:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT", LIST_W + 4, 8)
+        if ns.ForeverInset(box) then
+            listScroll:HookScript("OnShow", function() box:Show() end)
+            listScroll:HookScript("OnHide", function() box:Hide() end)
+        end
+        ns.ForeverInset(paper)
+    end
 
     frame:SetScale(tonumber(ns.settings.journalScale) or 1)
 
