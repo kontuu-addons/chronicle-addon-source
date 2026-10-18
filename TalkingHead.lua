@@ -100,6 +100,7 @@ local function create()
     f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     f:SetBackdropColor(0.07, 0.055, 0.04, 0.92)
     f:SetBackdropBorderColor(0.6, 0.48, 0.25, 1)
+    ns.ForeverLook(f) -- the rock and the diamond-metal border of Forever's windows (f.rock, f.metal)
     f:SetClampedToScreen(true)
     f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
     -- held by its top right corner: it changes size only between the full and the compact window, to the left and
@@ -125,7 +126,7 @@ local function create()
         and type(pos[3]) == "number" and type(pos[4]) == "number" then f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4]) else f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 170) end
     pin() -- older saved places (and the default) were held by another corner
 
-    -- portrait window: dark inset with a thin gold rim
+    -- portrait window: a dark inset, in the game's own inner frame where it has one
     f.window = CreateFrame("Frame", nil, f, "BackdropTemplate")
     f.faded = false -- the whole interface faded out (OnUpdate): the portrait goes with it
     f.window:SetSize(84, 84)
@@ -133,6 +134,7 @@ local function create()
     f.window:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     f.window:SetBackdropColor(0.02, 0.02, 0.03, 1)
     f.window:SetBackdropBorderColor(0.6, 0.48, 0.25, 0.8)
+    ns.ForeverInset(f.window)
 
     f.model = CreateFrame("PlayerModel", nil, f.window)
     f.model:SetPoint("TOPLEFT", 1, -1); f.model:SetPoint("BOTTOMRIGHT", -1, 1)
@@ -266,6 +268,7 @@ local function create()
                 list:SetFrameStrata("DIALOG")
                 list:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
                 list:SetBackdropColor(0.07, 0.055, 0.04, 0.97); list:SetBackdropBorderColor(0.6, 0.48, 0.25, 1)
+                ns.ForeverLook(list)
                 list:EnableMouse(true)
                 local title = list:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
                 title:SetPoint("TOPLEFT", 10, -8); title:SetText(L["What was wrong?"])
@@ -559,12 +562,13 @@ local function applyStyle(compact)
     f.cine, f.compact = cine, compact
     local bg = ns.settings.speakerBg or 1 -- the background's strength (option), 0 = only the words
     for _, t in ipairs(f.shade) do t:SetShown(cine and bg > 0); t:SetAlpha(bg) end
+    if f.rock then f.rock:SetShown(not cine); f.metal:SetShown(not cine); f.rock:SetAlpha(bg); f.metal:SetAlpha(bg) end
     if cine then
         f:SetBackdropColor(0, 0, 0, 0); f:SetBackdropBorderColor(0, 0, 0, 0)
         f.title:Hide()
         f.sub:SetTextColor(1, 0.97, 0.9); f.sub:SetShadowOffset(1, -1); f.sub:SetShadowColor(0, 0, 0, 1)
     else
-        f:SetBackdropColor(0.07, 0.055, 0.04, 0.92 * bg); f:SetBackdropBorderColor(0.6, 0.48, 0.25, bg)
+        if not f.rock then f:SetBackdropColor(0.07, 0.055, 0.04, 0.92 * bg); f:SetBackdropBorderColor(0.6, 0.48, 0.25, bg) end
         f.title:Show()
         f.sub:SetTextColor(0.92, 0.88, 0.8)
     end

@@ -14,6 +14,7 @@ local function makeBubble()
     b:SetWidth(260)
     b:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     b:SetBackdropColor(0.07, 0.055, 0.04, 0.96); b:SetBackdropBorderColor(0.85, 0.68, 0.35, 1)
+    ns.ForeverLook(b)
     b:SetClampedToScreen(true)
     b.title = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     -- fixed widths: the bubble's height is measured from the text right away, before anchors would give it a width

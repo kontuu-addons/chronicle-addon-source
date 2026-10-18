@@ -92,6 +92,7 @@ local function getToast()
     t:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     t:SetBackdropColor(0.06, 0.05, 0.04, 0.92)
     t:SetBackdropBorderColor(0.55, 0.45, 0.25, 1)
+    ns.ForeverLook(t)
     t:EnableMouse(true)
 
     local icon = t:CreateTexture(nil, "ARTWORK")
