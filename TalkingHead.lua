@@ -636,6 +636,7 @@ function T.Show(entry, key)
         local k = key or ""
         local zone = k:match("^zone:(.+)") or k:match("^area:([^:]+):") or k:match("^dng:(.+)") or k:match("^epi:([^|]+)") or k:match("^dend:([^:|]+)")
         local tale = k:match("^tale:(.+)")
+        if tale then f.icon:SetTexture("Interface\\Icons\\Spell_Fire_Fire") end
         local attId, att = k:match("^att:(.+)"), nil
         local bioId = tonumber(k:match("^bio:(%d+)$") or "")
         for name, e in pairs(bioId and ns.Lore and ns.Lore.npcs or {}) do

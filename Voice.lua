@@ -247,7 +247,6 @@ local function changed()
     if ns.Books and ns.Books.Update then ns.Books.Update() end
     if ns.Journal and ns.Journal.OnVoiceChanged then ns.Journal.OnVoiceChanged() end
     if ns.Map and ns.Map.OnVoiceChanged then ns.Map.OnVoiceChanged() end
-    if ns.Campfire and ns.Campfire.OnVoiceChanged then ns.Campfire.OnVoiceChanged() end
 end
 
 local ttsActive = false
@@ -344,6 +343,9 @@ local function start(entry, key)
     handle = h
     -- heard once it really plays: a file that failed would otherwise be skipped as "already heard" from then on
     if ns.char and ns.char.heard and key and (key:match("^q%d") or key:sub(1, 4) == "book") then ns.char.heard[key] = true end
+    -- a campfire tale counts as heard once it really plays, not when it was queued (a Play may drop the queue)
+    local tale = ns.char and key and key:match("^tale:(.+)")
+    if tale then ns.char.tales = ns.char.tales or {}; ns.char.tales[tale] = time() end
     lastKey = key or lastKey -- only a line that really plays: Replay, Play/Stop and /lore report use it
     if key and history[#history] ~= key then -- Back steps through the lines that really played
         history[#history + 1] = key
