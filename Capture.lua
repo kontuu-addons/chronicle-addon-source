@@ -45,7 +45,8 @@ end
 
 local function where()
     local map = C_Map and C_Map.GetBestMapForUnit and clean(C_Map.GetBestMapForUnit("player"))
-    local zone, sub = ns.zoneEN(clean(GetRealZoneText())), clean(GetSubZoneText())
+    -- the map ID first: it is the same on every client, the zone's name only if it could be translated
+    local zone, sub = ns.zoneOfMap(map) or ns.zoneEN(clean(GetRealZoneText())), clean(GetSubZoneText())
     if zone == "" then zone = nil end   -- loading screens, some instances
     if sub == "" then sub = nil end
     return zone, sub, map

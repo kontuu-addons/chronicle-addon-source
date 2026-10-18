@@ -286,6 +286,24 @@ ev:SetScript("OnEvent", function(_, event, arg)
         c.active = c.active or {}     -- [questID] = accepted time
         c.heard = c.heard or {}       -- [voice key] = true, lines already played automatically
         c.greeted = c.greeted or {}   -- [greeting key] = time it last played (for the greeting cooldown)
+        -- zones saved in the client's language ("Wald von Elwynn") showed up twice after a language change;
+        -- quests with a map ID tell which English zone each such name means
+        local alias = {}
+        for _, q in pairs(db.quests) do
+            local en = ns.zoneOfMap(q.map)
+            if en and q.zone and not ns.zoneKnown(q.zone) then alias[q.zone] = en; q.zone = en end
+        end
+        if next(alias) then
+            for _, e in ipairs(c.journal) do e.zone = alias[e.zone] or e.zone end
+            for _, t in ipairs({ db.greetings or {}, db.offers or {} }) do
+                for _, g in pairs(t) do g.zone = alias[g.zone] or g.zone end
+            end
+            for _, t in ipairs({ c.zoneSeen or {}, c.tales or {}, c.epilogues or {} }) do
+                for name, en in pairs(alias) do
+                    if t[name] then t[en] = math.max(t[en] or 0, t[name]); t[name] = nil end
+                end
+            end
+        end
 
         ns.db, ns.char, ns.settings = db, c, db.settings
     elseif event == "PLAYER_LOGIN" then
