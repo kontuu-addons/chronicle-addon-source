@@ -1,4 +1,5 @@
--- Chronicle / Options: Esc > Options > AddOns > Chronicle (also /lore options).
+-- Chronicle / Options: the Options tab of the journal (also /lore options and a right-click on the minimap book). The
+-- game's settings window (Esc > Options > AddOns > Chronicle) only has a button that opens it.
 local _, ns = ...
 local L = ns.L
 local O = {}
@@ -362,10 +363,28 @@ local function build()
     end
     page:SetScript("OnShow", O.Refresh) -- /lore commands may have changed something meanwhile
 
-    local category = Settings.RegisterCanvasLayoutCategory(page, "Chronicle")
+    O.page = page
+
+    -- the game's settings window gets only a way to the journal's Options tab; a client without that tab shows the
+    -- page here instead
+    local stub = CreateFrame("Frame")
+    stub:Hide()
+    local title = stub:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16); title:SetText("Chronicle")
+    local note = stub:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    note:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -10); note:SetText(L["Chronicle's options are in its journal."])
+    local open = CreateFrame("Button", nil, stub, "UIPanelButtonTemplate")
+    open:SetSize(200, 24); open:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -12)
+    open:SetText(L["Open Chronicle's options"]); ns.FitButton(open)
+    open:SetScript("OnClick", function() O.Open() end)
+    stub:SetScript("OnShow", function(self)
+        if ns.Journal and ns.Journal.HasOptionsTab and ns.Journal.HasOptionsTab() then return end
+        title:Hide(); note:Hide(); open:Hide()
+        O.Embed(self)
+    end)
+    local category = Settings.RegisterCanvasLayoutCategory(stub, "Chronicle")
     Settings.RegisterAddOnCategory(category)
     O.category = category
-    O.page = page
 end
 
 -- Options > Reset to defaults. Journal only stays as the edition or game language set it (Story Journal, non-English).
@@ -389,8 +408,7 @@ function O.Set(key, value)
     if O.page and O.page:IsVisible() and O.Refresh then O.Refresh() end
 end
 
--- The same page inside the journal (its Options tab), borrowed while the journal shows it. The settings window
--- puts it back in place whenever it opens.
+-- The page inside the journal (its Options tab), or inside the game's settings window on a client without that tab.
 function O.Embed(host)
     if not O.page then return false end
     if O.page:GetParent() ~= host then O.home = O.page:GetParent() end
@@ -405,20 +423,24 @@ end
 function O.Unembed(host)
     if not (O.page and O.page:GetParent() == host) then return end
     O.page:Hide()
+    -- no settings page to go back to (the options live in the journal): stay put, so the page keeps its size and
+    -- needn't lay itself out again (a frame late) the next time it shows
+    if not O.home then return end
     -- back where the settings window keeps it
     O.page:SetParent(O.home)
     O.page:ClearAllPoints()
-    if O.home then O.page:SetAllPoints(O.home) end
+    O.page:SetAllPoints(O.home)
 end
 
 -- The game won't open its settings window in combat: wait for the fight to end, then open it.
 local afterCombat = CreateFrame("Frame")
 afterCombat:SetScript("OnEvent", function(self)
     self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-    O.Open()
+    O.OpenSettings()
 end)
 
-function O.Open()
+-- The game's settings window on Chronicle's page (the old way, for a journal without an Options tab).
+function O.OpenSettings()
     if InCombatLockdown() then
         ns.pr(L["the options open when you leave combat."])
         afterCombat:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -427,6 +449,15 @@ function O.Open()
     if O.category then Settings.OpenToCategory(O.category:GetID())
     else ns.pr(L["the options panel is not available in this client. Use /lore voice, /lore stoponclose."]) end
     return true
+end
+
+-- The options: the journal on its Options tab (also in combat), else the game's settings window.
+function O.Open()
+    if ns.Journal and ns.Journal.ShowOptions and ns.Journal.ShowOptions() then
+        if SettingsPanel and SettingsPanel:IsShown() then pcall(HideUIPanel, SettingsPanel) end
+        return true
+    end
+    return O.OpenSettings()
 end
 
 table.insert(ns.onLogin, function()

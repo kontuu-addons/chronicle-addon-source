@@ -2622,7 +2622,7 @@ function J.SetTab(which, keepSelection)
     local shown = p and p.host and p.embed(p.host)
     if p and not shown then
         -- nothing to share, or no page to show here: the old ways
-        if which == "options" and ns.Options.Open() then frame:Hide() end
+        if which == "options" and ns.Options.OpenSettings() then frame:Hide() end
         return
     end
     for name, q in pairs(all) do
@@ -2747,7 +2747,7 @@ local function create()
         frame:HookScript("OnHide", function() PlaySound(SOUNDKIT.IG_CHARACTER_INFO_CLOSE) end)
     end
 
-    local openOptions = function() if ns.Options.Open() then frame:Hide() end end -- the settings window opens behind ours
+    local openOptions = function() if ns.Options.OpenSettings() then frame:Hide() end end -- the settings window opens behind ours
     if styled then
         -- side tabs: the two pages, then a gap, then options and sharing
         frame.tabStory = sideTab(frame, "Interface\\Icons\\INV_Scroll_03", L["The Story"], function() J.SetTab("story") end)
@@ -3044,6 +3044,20 @@ function J.Toggle()
         if tab == "story" then selected = chapterHere() or selected end
         J.Refresh()
     end
+end
+
+-- the Options tab of the journal in the new style (false: the client lacks its look, the options stay in the game's
+-- settings window)
+function J.HasOptionsTab()
+    if not frame then create() end
+    return frame.optionsHost ~= nil and ns.Options.page ~= nil
+end
+
+function J.ShowOptions()
+    if not J.HasOptionsTab() then return false end
+    frame:Show()
+    J.SetTab("options")
+    return frame.optionsHost:IsShown()
 end
 
 -- /lore share and the share nudge: the Share tab of the journal in the new style (false: use the old window)

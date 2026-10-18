@@ -90,9 +90,13 @@ function Tour.Start()
           text = L["A few things worth a look in the options:\n|cffffd100Speaker window style|r: a window with a portrait, or Cinematic subtitles.\n|cffffd100Sound channel|r: which volume slider the voices follow.\n|cffffd100What gets voiced|r: greetings, books, NPCs talking in the world, the narrator after a turn-in.\n|cffffd100Side tabs on the quest window|r: Listen and Recap as tabs.\n|cffffd100Journal only|r: the story without voices."],
           prepare = function()
               if not (ns.Options and ns.Options.Open and ns.Options.Open()) then return nil end
-              return SettingsPanel
+              -- the journal's Options tab, or the game's settings window on a client without it
+              return SettingsPanel and SettingsPanel:IsShown() and SettingsPanel or ns.Options.page
           end,
-          leave = function() if SettingsPanel and SettingsPanel:IsShown() then pcall(HideUIPanel, SettingsPanel) end end },
+          leave = function()
+              if SettingsPanel and SettingsPanel:IsShown() then pcall(HideUIPanel, SettingsPanel) end
+              if ChronicleJournalFrame and ChronicleJournalFrame:IsShown() then ChronicleJournalFrame:Hide() end
+          end },
         { title = L["No voice yet?"],
           text = L["WoW: Forever keeps adding quests. When one has no voice, Chronicle keeps its text: type |cffffd100/lore share|r and send it in, and it gets a voice in the next update.\n\n|cffffd100/lore tour|r shows this tour again."] },
     }
