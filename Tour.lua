@@ -39,6 +39,16 @@ local function show(title, text, anchor, side)
     bubble:SetHeight(10 + bubble.title:GetStringHeight() + 6 + bubble.text:GetStringHeight() + 42)
     bubble:ClearAllPoints()
     if anchor and anchor:IsVisible() then
+        -- no room where it should go (the anchor sits at the screen's edge): above falls back to the left, left to the
+        -- right; a frame too wide for either keeps its side, and the clamp to the screen does the rest
+        local k = anchor:GetEffectiveScale() / bubble:GetEffectiveScale()
+        local w = bubble:GetWidth() + 12
+        local roomLeft, roomRight = anchor:GetLeft() * k >= w, anchor:GetRight() * k + w <= UIParent:GetWidth()
+        if side == "above" and anchor:GetTop() * k + bubble:GetHeight() + 12 > UIParent:GetHeight() then
+            side = (roomLeft or not roomRight) and "left" or "right"
+        elseif side == "left" and not roomLeft and roomRight then
+            side = "right"
+        end
         if side == "left" then bubble:SetPoint("RIGHT", anchor, "LEFT", -12, 0)
         elseif side == "above" then bubble:SetPoint("BOTTOM", anchor, "TOP", 0, 12)
         else bubble:SetPoint("LEFT", anchor, "RIGHT", 12, 0) end
