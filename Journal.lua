@@ -893,6 +893,7 @@ local function renderChapter(ch)
     local voices = not ns.settings.journalOnly
     header.recap:SetShown(voices); header.rule:Show()
     header.recap.keys, header.recap.label = recapKeys(ch), nil
+    header.recap.tell, header.recap.libraryToggle = nil, nil -- the Chronicle and Library pages give it other jobs
     header.recap:SetWidth(100)
     header.zone.keys = zoneStoryKeys(ch.zone)
     header.zone:SetShown(voices and #header.zone.keys > 1)
