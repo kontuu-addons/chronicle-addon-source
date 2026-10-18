@@ -44,6 +44,7 @@ local function create()
     icon:SetPoint("TOPLEFT", 7, -6)
     icon:SetTexture("Interface\\Icons\\INV_Misc_Book_09")
     icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    btn.icon = icon
     local border = btn:CreateTexture(nil, "OVERLAY")
     border:SetSize(53, 53)
     border:SetPoint("TOPLEFT")
@@ -111,6 +112,53 @@ end
 
 -- the book itself, when it is on screen (the tour points at it)
 function M.Button() return btn and btn:IsVisible() and btn or nil end
+
+-- Near a camp fire with a tale still to hear (Campfire.lua): a pulsing golden ring, and the book fades into a camp
+-- fire and straight back, the book staying three seconds. On our own button or on the one LibDBIcon made for us.
+local campOn, lit
+
+local function decorate(b, icon)
+    local glow = CreateFrame("Frame", nil, b)
+    glow:SetAllPoints(b); glow:SetFrameLevel(b:GetFrameLevel() + 1)
+    local ring = glow:CreateTexture(nil, "OVERLAY")
+    ring:SetSize(53, 53); ring:SetPoint("TOPLEFT", b)
+    ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+    ring:SetBlendMode("ADD"); ring:SetVertexColor(1, 0.82, 0)
+    glow.anim = ring:CreateAnimationGroup()
+    glow.anim:SetLooping("BOUNCE")
+    local pulse = glow.anim:CreateAnimation("Alpha")
+    pulse:SetFromAlpha(0.6); pulse:SetToAlpha(1); pulse:SetDuration(0.9)
+    local layer, sub = icon:GetDrawLayer()
+    local fire = b:CreateTexture(nil, layer, nil, math.min((sub or 0) + 1, 7))
+    fire:SetAllPoints(icon); fire:SetTexture("Interface\\Icons\\Spell_Fire_Fire"); fire:SetTexCoord(icon:GetTexCoord())
+    fire:SetAlpha(0)
+    glow.swap = fire:CreateAnimationGroup()
+    glow.swap:SetLooping("REPEAT")
+    local fadeIn = glow.swap:CreateAnimation("Alpha")
+    fadeIn:SetFromAlpha(0); fadeIn:SetToAlpha(0.7); fadeIn:SetStartDelay(3); fadeIn:SetDuration(1); fadeIn:SetOrder(1)
+    local fadeOut = glow.swap:CreateAnimation("Alpha")
+    fadeOut:SetFromAlpha(0.7); fadeOut:SetToAlpha(0); fadeOut:SetDuration(1); fadeOut:SetOrder(2)
+    glow.fire = fire
+    b.campGlow = glow
+end
+
+function M.SetCampfire(on)
+    on = on and true or false
+    if on == campOn then return end
+    campOn = on
+    if lit then
+        lit.campGlow.anim:Stop(); lit.campGlow.swap:Stop(); lit.campGlow:Hide(); lit.campGlow.fire:Hide()
+        lit = nil
+    end
+    if not on then return end
+    local b = btn and btn:IsShown() and btn
+        or brokered and brokered.GetMinimapButton and brokered:GetMinimapButton("Chronicle")
+    local icon = b and b.icon
+    if not icon then return end -- shortcut: a button that appears while near a fire stays plain until the next fire
+    if not b.campGlow then decorate(b, icon) end
+    b.campGlow:Show(); b.campGlow.fire:Show(); b.campGlow.anim:Play(); b.campGlow.swap:Play()
+    lit = b
+end
 
 function M.Update()
     if brokered == false then
