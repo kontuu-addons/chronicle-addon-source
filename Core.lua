@@ -9,14 +9,16 @@ ns.onLogin = {}
 BINDING_HEADER_CHRONICLE = "Chronicle"
 BINDING_NAME_CHRONICLE_PLAYSTOP = L["Play, pause or resume the voice"]
 BINDING_NAME_CHRONICLE_SKIP = L["Skip to the next line"]
+BINDING_NAME_CHRONICLE_BACK = L["Back to the line before"]
 BINDING_NAME_CHRONICLE_JOURNAL = L["Open the journal"]
 _G.ChronicleBinding_PlayStop = function()
     local V = ns.Voice
     if not V then return end
     if V.Paused() then V.Resume() return end
     if V.IsPlaying() then V.Pause() return end
-    local key = V.LastKey() or ns.lastKey -- the last line heard, or the quest window's line
-    if key then V.Play(key) end
+    -- the last line heard again (the lines waiting and Back stay, as with the speaker window's replay), or the quest
+    -- window's line
+    if V.LastKey() then V.Restart() elseif ns.lastKey then V.Play(ns.lastKey) end
 end
 -- Playing with a controller: its back button is Escape, so Chronicle's small windows close with it then. Only while a
 -- gamepad is on: with mouse and keyboard, Escape goes straight to the game menu as before.
@@ -51,6 +53,8 @@ _G.ChronicleBinding_Skip = function()
     elseif ns.Voice and ns.Voice.IsPlaying() then ns.Voice.Skip()
     elseif ns.TalkingHead then ns.TalkingHead.Hide(true) end
 end
+-- Back: the line before in the list that is playing (the speaker window's back button)
+_G.ChronicleBinding_Back = function() if ns.Voice then ns.Voice.Prev() end end
 _G.ChronicleBinding_Journal = function() if ns.Journal then ns.Journal.Toggle() end end
 
 -- The minimap's addon compartment (the TOC names these): left-click the journal, right-click the options.
