@@ -3329,6 +3329,7 @@ local function renderList()
                             or "Legacy-Rewards-Tracker-Diamond")
                         r.count:SetText(ch.locked and "?" or tostring(ch.done))
                         r.check:SetShown(finished)
+                        r.bar:SetShown(not finished) -- the check says it already: a bar only on the way
                         r.chapter = ch
                         r.edge:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], ch.locked and 0.15 or 0.5)
                     end
@@ -3430,6 +3431,7 @@ local function renderList()
                 r.diamond:SetAtlas(a.done == 0 and "Legacy-Rewards-Tracker-Diamond-Disable" or "Legacy-Rewards-Tracker-Diamond")
                 r.count:SetText(tostring(a.done))
                 r.check:SetShown(not a.nextId)
+                r.bar:SetShown(a.nextId ~= nil) -- the check says it already: a bar only on the way
                 r.chapter = a
                 r.edge:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], 0.5)
             else
