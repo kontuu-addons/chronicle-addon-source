@@ -405,6 +405,30 @@ local function create()
     f.replay:SetPoint("LEFT", f.next, "RIGHT", 14, 0)
     f.count = f.player:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 
+    -- the portrait as a button: stopped (or the last line ended) it goes dark with a play arrow on it; while someone
+    -- talks the mouse on it shows a stop square. A click does what it shows.
+    f.portraitPlay = CreateFrame("Button", nil, f.window)
+    f.portraitPlay:SetAllPoints()
+    f.portraitPlay:SetFrameLevel(f.window:GetFrameLevel() + 5)
+    local shade = f.portraitPlay:CreateTexture(nil, "ARTWORK")
+    shade:SetAllPoints(); shade:SetColorTexture(0, 0, 0, 0.6)
+    -- the same play triangle and stop square as in the player row, larger
+    local big = arrow(f.portraitPlay, 2, false, 24, "OVERLAY")
+    local square = bar(f.portraitPlay, 0, 21, 21, "OVERLAY")
+    big:SetAlpha(0.6); square:SetAlpha(0.6) -- see-through, the portrait shows under them
+    f.portraitPlay.update = function()
+        local stopped, hover = not talking(), f.portraitPlay:IsMouseOver()
+        shade:SetShown(stopped or hover); big:SetShown(stopped); square:SetShown(not stopped and hover)
+    end
+    f.portraitPlay:SetScript("OnEnter", f.portraitPlay.update)
+    f.portraitPlay:SetScript("OnLeave", f.portraitPlay.update)
+    f.portraitPlay:SetScript("OnClick", function() playOrStop(); f.portraitPlay.update() end)
+    -- the window's own mouse still works on the portrait: right-click skips, dragging moves the window
+    f.portraitPlay:SetScript("OnMouseUp", function(_, button) if button == "RightButton" then skip() end end)
+    f.portraitPlay:RegisterForDrag("LeftButton")
+    f.portraitPlay:SetScript("OnDragStart", function() f:GetScript("OnDragStart")(f) end)
+    f.portraitPlay:SetScript("OnDragStop", function() f:GetScript("OnDragStop")(f) end)
+
     local function clock(s)
         s = math.max(0, math.floor(s + 0.5))
         return ("%d:%02d"):format(math.floor(s / 60), s % 60)
@@ -416,6 +440,7 @@ local function create()
         local back = ns.Voice.HasPrev()
         f.back:SetEnabled(back); f.back:SetAlpha(back and 1 or 0.35) -- greyed out for the first line, or one on its own
         f.count:SetText(waiting > 0 and (L["%d more"]):format(waiting) or "")
+        f.portraitPlay.update()
         -- stopped: says so; ended: the whole length, 0:31 / 0:31
         if not on then
             local length = f.duration and clock(f.duration)
