@@ -759,6 +759,28 @@ local function toggle(b, play)
     if ns.Voice.Owner() == b then ns.Voice.Stop() else play() end
 end
 
+-- A small icon that plays a quest's lines: the quest giver's speech bubble, the narrator's book (the game's own
+-- pictures). While it talks it goes dark with a gold stop square on it, as the speaker window's portrait does.
+local function iconButton(parent, icon, tip)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(18, 18)
+    b:SetNormalTexture(icon)
+    b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    b.shade = b:CreateTexture(nil, "OVERLAY"); b.shade:SetAllPoints(); b.shade:SetColorTexture(0, 0, 0, 0.35)
+    b.square = b:CreateTexture(nil, "OVERLAY", nil, 1); b.square:SetSize(8, 8); b.square:SetPoint("CENTER")
+    b.square:SetColorTexture(1, 0.82, 0, 0.7) -- see-through, the icon shows under it
+    b.shade:Hide(); b.square:Hide()
+    b:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine(self.square:IsShown() and L["Stop"] or tip, 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    -- callers set Stop or the label as on a button: Stop puts the stop square on
+    function b:SetText(t) local stop = t == L["Stop"]; self.shade:SetShown(stop); self.square:SetShown(stop) end
+    return b
+end
+
 -- right page rows (story entries)
 local function getEntryRow(i)
     local r = entryRows[i]
@@ -773,8 +795,8 @@ local function getEntryRow(i)
     r.who:SetScript("OnLeave", function(self) ink(self.text, INK_SOFT) end)
     r.who:SetScript("OnClick", function(self) click(); if self.name then J.ShowPerson(self.name) end end)
     r.body = text(r, "QuestFont", INK); r.body:SetPoint("TOPLEFT", r.who, "BOTTOMLEFT", 0, -5); r.body:SetSpacing(2)
-    r.play = button(r, L["Quest"], 64)
-    r.recap = button(r, L["Recap"], 64)
+    r.play = iconButton(r, "Interface\\GossipFrame\\GossipGossipIcon", L["Play quest"])
+    r.recap = iconButton(r, "Interface\\Icons\\INV_Misc_Book_09", L["Play recap"])
     entryRows[i] = r
     return r
 end
@@ -1035,7 +1057,7 @@ local function renderChapter(ch)
         local q, l = ns.db.quests[e.id] or {}, lore().quests[e.id] or {}
         local r = getEntryRow(i)
         r:ClearAllPoints(); r:SetPoint("TOPLEFT", page, "TOPLEFT", 0, y); r:SetWidth(pw)
-        r.title:SetWidth(pw - 170); r.body:SetWidth(pw - 24)
+        r.title:SetWidth(pw - 70); r.body:SetWidth(pw - 24) -- room for the two icons
         r.icon:SetTexture(e.state == "done" and ICON_DONE or ICON_ACTIVE)
         r.title:SetText(questTitle(e.id) .. (ns.IsNew(e.id) and L["  |cff2e8f86new in Forever|r"] or "")
             .. (e.state == "active" and L["  |cff8a6d45(in progress)|r"] or ""))
@@ -1047,14 +1069,16 @@ local function renderChapter(ch)
 
         local body
         if e.state == "done" and l.summary then body = l.summary else body = excerpt(q.detail, 420) end
-        body = body or (ns.Voice.Get("q" .. e.id .. ":detail") and L["Press Quest to hear the quest giver."] or L["No story written for this quest yet."])
+        body = body or (ns.Voice.Get("q" .. e.id .. ":detail") and L["Click the speech bubble to hear the quest giver."] or L["No story written for this quest yet."])
         r.body:SetText(body)
 
         local qKey, sKey = ns.Voice.PageKey(e.id, "detail"), "sum:" .. e.id
-        r.play:ClearAllPoints(); r.play:SetPoint("TOPRIGHT", r, "TOPRIGHT", -70, 2)
-        r.recap:ClearAllPoints(); r.recap:SetPoint("TOPRIGHT", r, "TOPRIGHT", 0, 2)
         r.play:SetShown(ns.Voice.Get(qKey) ~= nil)
         r.recap:SetShown(e.state == "done" and ns.Voice.Get(sKey) ~= nil)
+        -- Recap at the right, Quest left of it (or at the right when there is no recap)
+        r.recap:ClearAllPoints(); r.recap:SetPoint("TOPRIGHT", r, "TOPRIGHT", 0, 2)
+        r.play:ClearAllPoints()
+        if r.recap:IsShown() then r.play:SetPoint("RIGHT", r.recap, "LEFT", -6, 0) else r.play:SetPoint("TOPRIGHT", r, "TOPRIGHT", 0, 2) end
         r.play:SetScript("OnClick", function(b) toggle(b, function() ns.Voice.Play(qKey, b) end) end)
         r.recap:SetScript("OnClick", function(b) toggle(b, function() ns.Voice.Play(sKey, b) end) end)
 
