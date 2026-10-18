@@ -94,11 +94,14 @@ end
 
 -- ---------------------------------------------------------------- who is speaking (TalkingHead.lua draws it)
 local function showBar(entry, key)
+    -- a window still up with a line that ended goes when one plays that it doesn't show: its buttons would work on
+    -- that one while it shows the old one
+    local function notShown() if ns.TalkingHead then pcall(ns.TalkingHead.Hide, true) end end
     -- NPCs talking in the world already have the game's speech bubble; a window popping up for every chatter line is noise
-    if key and key:sub(1, 4) == "say:" then return end
+    if key and key:sub(1, 4) == "say:" then return notShown() end
     -- Immersion's talk box already shows the NPC and the text of quest pages and greetings
     local npcLine = key and (key:match("^q%d") or key:sub(1, 4) == "gos:" or key:sub(1, 3) == "qg:")
-    if npcLine and ns.ExternalDialogShown and ns.ExternalDialogShown() then return end
+    if npcLine and ns.ExternalDialogShown and ns.ExternalDialogShown() then return notShown() end
     if ns.settings.speaker and ns.TalkingHead then
         local ok, err = pcall(ns.TalkingHead.Show, entry, key)
         if not ok and ns.settings.debug then ns.pr("debug: talking head error: " .. tostring(err)) end
@@ -271,6 +274,8 @@ end
 function V.Stop()
     queue, paused = nil, nil
     stopSound()
+    -- stopped on purpose: the speaker window goes too (a line that ends by itself leaves it up until it is closed)
+    if ns.TalkingHead then pcall(ns.TalkingHead.Hide, true) end
 end
 
 local playNext

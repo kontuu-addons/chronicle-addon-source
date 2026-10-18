@@ -82,6 +82,7 @@ local DEFAULTS = {
     stopOnClose = false, -- keep talking after the quest window closes (works with auto-accept addons)
     speaker = true,      -- show the "now speaking" bar
     lockSpeaker = false, -- the speaker window can't be dragged
+    speakerStays = true, -- the speaker window stays up after the last line until it is closed
     speakerBg = 1,       -- how strong the speaker window's background is (0 = only the words)
     recapAfterTurnIn = true, -- narrator reads the story recap after you hand in a quest
     minimap = true,      -- minimap button

@@ -332,7 +332,7 @@ local function create()
     -- everything (thanks timmeh)
     local function skip()
         if ns.Voice.Paused() then ns.Voice.Stop(); T.Hide(true) return end
-        if not current then T.Hide(true) return end -- the line already ended (kept up for Good / Bad)
+        if not current then T.Hide(true) return end -- the line already ended (the window stays up until closed)
         if IsShiftKeyDown() then ns.Voice.Stop() else ns.Voice.Skip() end
     end
     f:SetScript("OnMouseUp", function(_, button) if button == "RightButton" then skip() end end)
@@ -736,15 +736,18 @@ end
 
 function T.Hide(now)
     lingerToken = lingerToken + 1
-    -- checking the voices: stay up a few seconds after the line ends, so a short line can still be marked
-    if not now and f and f:IsShown() and currentKey and ns.settings.checkVoices then
+    -- the last line ended: the window stays up with it until it is closed (option "Keep the speaker window open"), for
+    -- Replay, Back and Good / Bad; without the option only while checking the voices, a few seconds to mark the line
+    local stays = ns.settings.speakerStays
+    if not now and f and f:IsShown() and currentKey and (stays or ns.settings.checkVoices) then
         current, startedAt, pages = nil, nil, nil
         f.progress:SetValue(1)
+        pcall(f.model.SetAnimation, f.model, 0)
         f.updateControls()
-        local token = lingerToken
-        C_Timer.After(6, function()
-            if token == lingerToken then T.Hide(true) end
-        end)
+        if not stays then
+            local token = lingerToken
+            C_Timer.After(6, function() if token == lingerToken then T.Hide(true) end end)
+        end
         return
     end
     current, startedAt, pages, currentKey = nil, nil, nil, nil

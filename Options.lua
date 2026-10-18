@@ -14,7 +14,7 @@ local function volCvar() local _, ch = ns.Voice.Channel() return ch.vol end
 local GREYED = { -- off while "Journal only" is on
     voice = true, recapAfterTurnIn = true, greetings = true, books = true, worldSpeech = true, ghostQuips = true,
     reactions = true, speaker = true, subtitles = true, bigSubtitles = true, skipHeard = true, stopOnClose = true,
-    muteGameGreetings = true, ttsFallback = true, checkVoices = true,
+    muteGameGreetings = true, ttsFallback = true, checkVoices = true, speakerStays = true,
 }
 local ON_CHANGE = {
     minimap = function() ns.Minimap.Update() end,
@@ -219,6 +219,7 @@ local function build()
     slider(L["Window background"], L["How dark the speaker window's background is: the box of the window, or the shade behind the cinematic subtitles. All the way left shows only the words."],
         0, 1, 0.05, function() return ns.settings.speakerBg or 1 end, function(v) ns.settings.speakerBg = v; if ns.TalkingHead then ns.TalkingHead.Restyle() end end,
         function(v) return math.floor(v * 100 + 0.5) .. "%" end, function() return ns.settings.speaker and true or false end)
+    box("speakerStays", L["Keep the speaker window open"], L["After the last line the window stays until you close it, so you can play the line again, go back or mark it. Untick to close it when the voice ends."])
     box("lockSpeaker", L["Lock the speaker window"], L["The speaker window and the cinematic subtitles stay where they are and can't be moved by accident. Untick to drag them again."])
     -- the speaker window's look: the window with the portrait, or cinematic (thanks Alche and Hedge)
     do
