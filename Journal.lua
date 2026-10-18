@@ -3703,8 +3703,22 @@ local function hasAtlas(name)
     return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) ~= nil
 end
 
--- a square tab on the window's right edge, like the Friends and Progress Track windows
+-- a square tab on the window's right edge: the game's own (LargeSideTabButtonTemplate), set up as its Collections
+-- window does, so the icon fills the tab and is cut to its shape; else one of our own like it
 local function sideTab(parent, icon, tip, onClick)
+    local ok, tab = pcall(CreateFrame, "Button", nil, parent, "LargeSideTabButtonTemplate")
+    if ok and tab and tab.Icon and tab.SetChecked and tab.SetFillToInterior and tab.SetCustomOnMouseUpHandler then
+        tab.tooltipText = tip
+        tab.Icon:SetTexture(icon)
+        tab:SetFillToInterior(true)
+        tab:SetCustomOnMouseUpHandler(function(_, button, upInside)
+            if button == "LeftButton" and upInside then onClick() end
+        end)
+        -- J.SetTab calls SetEnabled(false) on the tab that is open: show it selected instead of greying it out
+        function tab:SetEnabled(on) self:SetChecked(not on) end
+        tab:SetChecked(false)
+        return tab
+    end
     local b = CreateFrame("Button", nil, parent)
     b:SetSize(55, 55)
     b.bg = b:CreateTexture(nil, "BACKGROUND"); b.bg:SetAtlas("common-sidetab"); b.bg:SetSize(55, 60); b.bg:SetPoint("CENTER")
