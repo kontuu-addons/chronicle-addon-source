@@ -794,6 +794,7 @@ local function hideAll()
     -- a dungeon's page moves these onto and under its painting; every other page has them where they were made
     if header.intro then header.intro:ClearAllPoints(); header.intro:SetPoint("TOPLEFT", 0, -50) end
     if header.recap then header.recap:ClearAllPoints(); header.recap:SetPoint("TOPRIGHT", page, "TOPRIGHT", 0, 0) end
+    if header.title then header.title:SetPoint("RIGHT", page, "RIGHT", -110, 0) end -- room for one button, as before
     for _, v in pairs(person) do if type(v) == "table" and v.Hide then v:Hide() end end
     for _, r in ipairs(person.deal or {}) do r:Hide() end
     for _, v in pairs(beast) do if type(v) == "table" and v.Hide then v:Hide() end end
@@ -900,8 +901,8 @@ end
 -- applies to this character (J.ArcForMe)
 local function showZoneLinks(zone)
     local on = zone and true
-    header.zoneLink.zone, header.overview.zone = zone, zone
-    header.zoneLink:SetShown(on and true or false); header.overview:SetShown(on and true or false)
+    header.zoneLink.zone = zone
+    header.zoneLink:SetShown(on and true or false)
 end
 
 -- the button at the top right of the page: Play recap on a chapter, Listen (or another label) elsewhere
@@ -3503,13 +3504,21 @@ local function remember(key)
     end
 end
 
+-- the buttons at the top right of the page, in one row from the right: Play recap, Play zone story, Back (the ones
+-- shown); the title ends before them
 local function showBack()
     local b = header.back
     if not b then return end
-    b:ClearAllPoints()
-    if header.recap:IsShown() then b:SetPoint("TOPRIGHT", header.recap, "TOPLEFT", -4, 0)
-    else b:SetPoint("TOPRIGHT", page, "TOPRIGHT", 0, 0) end
     b:SetShown(tab == "story" and #history > 0)
+    local right
+    for _, btn in ipairs({ header.recap, header.zone, b }) do
+        if btn:IsShown() then
+            btn:ClearAllPoints()
+            if right then btn:SetPoint("TOPRIGHT", right, "TOPLEFT", -4, 0) else btn:SetPoint("TOPRIGHT", page, "TOPRIGHT", 0, 0) end
+            right = btn
+        end
+    end
+    header.title:SetPoint("RIGHT", right or page, right and "LEFT" or "RIGHT", right and -8 or 0, 0)
 end
 
 function J.Refresh()
@@ -3915,20 +3924,10 @@ local function create()
         end
         toggle(self, function() ns.Voice.PlayQueue(self.keys or {}, self) end)
     end)
-    header.zone = button(page, L["Play zone story"], 120); header.zone:SetPoint("TOPRIGHT", header.recap, "BOTTOMRIGHT", 0, -4)
+    header.zone = button(page, L["Play zone story"], 120) -- placed in the row by showBack()
     header.zone:SetScript("OnClick", function(self)
         toggle(self, function() ns.Voice.PlayQueue(self.keys or {}, self) end)
     end)
-    -- the same page behind a button beside Play zone story, easier to find than the grey line
-    header.overview = button(page, L["Zone overview"], 120)
-    header.overview:SetPoint("RIGHT", header.zone, "LEFT", -4, 0)
-    header.overview:SetScript("OnClick", function(self) if self.zone then J.Select("area:" .. self.zone) end end)
-    header.overview:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine((L["Everything about %s's story"]):format(ns.zoneLocal(self.zone) or ""), 1, 1, 1)
-        GameTooltip:Show()
-    end)
-    header.overview:SetScript("OnLeave", function() GameTooltip:Hide() end)
     header.tellInfo = text(page, "GameFontNormalSmall", INK_SOFT); header.tellInfo:SetJustifyH("RIGHT")
     header.tellInfo:SetPoint("TOPRIGHT", header.recap, "BOTTOMRIGHT", -2, -4)
     local ticker = CreateFrame("Frame", nil, page)
