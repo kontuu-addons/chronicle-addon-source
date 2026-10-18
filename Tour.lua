@@ -95,6 +95,10 @@ function Tour.Start()
           prepare = function()
               if not (ns.Voice and ns.Voice.Test and ns.Voice.Test()) then return nil end
               return ns.TalkingHead and ns.TalkingHead.Frame and ns.TalkingHead.Frame()
+          end,
+          leave = function() -- the test line needn't run on, and the window needn't linger for the voice check
+              if ns.Voice and ns.Voice.Stop then ns.Voice.Stop() end
+              if ns.TalkingHead and ns.TalkingHead.Hide then ns.TalkingHead.Hide(true) end
           end },
         { title = L["Make it yours"], side = "left", needed = true,
           text = L["A few things worth a look in the options:\n|cffffd100Speaker window style|r: a window with a portrait, or Cinematic subtitles.\n|cffffd100Sound channel|r: which volume slider the voices follow.\n|cffffd100What gets voiced|r: greetings, books, NPCs talking in the world, the narrator after a turn-in.\n|cffffd100Side tabs on the quest window|r: Listen and Recap as tabs.\n|cffffd100Journal only|r: the story without voices."],
