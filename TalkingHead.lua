@@ -10,19 +10,21 @@ local f, current, startedAt, currentKey
 local lingerToken = 0 -- a newer show or hide cancels a pending "hide after the line ended"
 local pages, page -- subtitle pages of the current line: { text, at = share of the line where the page starts }
 
-local PAGE_CHARS = 250 -- about six lines in the talking head
+local SUB_LINES = 4 -- the words always have room for this many lines; longer text goes in pages of that size
+local PAD = 10 -- the window's margin
+local FOOT = 22 -- the height of the row at the foot
 
--- Whole sentences per page; a sentence longer than a page is split between words.
-local function paginate(text)
-    local pageChars = (ns.settings and ns.settings.bigSubtitles) and 170 or PAGE_CHARS -- bigger text, shorter pages
+-- Whole sentences per page, as many as fit (fits(text) measures them in the window, so bigger text makes more
+-- pages); a sentence longer than a page is split between words.
+local function paginate(text, fits)
     local pieces = {}
     for s in text:gmatch("[^%.!%?]+[%.!%?]*[\"']?%s*") do
-        if #s <= pageChars then
+        if fits(s) then
             pieces[#pieces + 1] = s
         else
             local cur = ""
             for w in s:gmatch("%S+%s*") do
-                if #cur + #w > pageChars and cur ~= "" then pieces[#pieces + 1] = cur; cur = "" end
+                if cur ~= "" and not fits(cur .. w) then pieces[#pieces + 1] = cur; cur = "" end
                 cur = cur .. w
             end
             if cur ~= "" then pieces[#pieces + 1] = cur end
@@ -38,7 +40,7 @@ local function paginate(text)
         cur = ""
     end
     for _, s in ipairs(pieces) do
-        if #cur + #s > pageChars and cur ~= "" then push() end
+        if cur ~= "" and not fits(cur .. s) then push() end
         cur = cur .. s
     end
     push()
@@ -96,8 +98,8 @@ local function create()
     f:SetBackdropBorderColor(0.6, 0.48, 0.25, 1)
     f:SetClampedToScreen(true)
     f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
-    -- held by its top right corner: the window grows downwards with long subtitles and narrows to the left when
-    -- slim, so the X stays in one place (thanks timmeh)
+    -- held by its top right corner: it changes size only between the full and the compact window, to the left and
+    -- downwards, so the X stays in one place (thanks timmeh)
     local function pin()
         local right, top = f:GetRight(), f:GetTop()
         if not (right and top) then return end
@@ -121,8 +123,8 @@ local function create()
 
     -- portrait window: dark inset with a thin gold rim
     f.window = CreateFrame("Frame", nil, f, "BackdropTemplate")
-    f.window:SetSize(90, 90)
-    f.window:SetPoint("TOPLEFT", 7, -7)
+    f.window:SetSize(84, 84)
+    f.window:SetPoint("TOPLEFT", 10, -34) -- arrange() places it under the head
     f.window:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     f.window:SetBackdropColor(0.02, 0.02, 0.03, 1)
     f.window:SetBackdropBorderColor(0.6, 0.48, 0.25, 0.8)
@@ -151,7 +153,6 @@ local function create()
     end
     f.sub:SetPoint("TOPLEFT", f.about, "BOTTOMLEFT", 0, -6); f.sub:SetPoint("RIGHT", -14, 0)
     f.sub:SetJustifyH("LEFT"); f.sub:SetJustifyV("TOP"); f.sub:SetSpacing(2)
-    if f.sub.SetMaxLines then f.sub:SetMaxLines(6) end
     f.sub:SetTextColor(0.92, 0.88, 0.8)
 
     -- the cinematic shade: dark in the middle, fading out to the sides and, in thin steps above and below the frame,
@@ -195,7 +196,7 @@ local function create()
 
     f.progress = CreateFrame("StatusBar", nil, f)
     f.progress:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 109, 10); f.progress:SetPoint("RIGHT", -14, 0)
-    f.progress:SetHeight(5)
+    f.progress:SetHeight(3)
     f.progress:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
     f.progress:SetStatusBarColor(0.85, 0.68, 0.35)
     f.progress:SetMinMaxValues(0, 1)
@@ -301,7 +302,10 @@ local function create()
     end
     f.good = markButton(L["Good"], "good", 0.2, 0.55, 0.28)
     f.bad = markButton(L["Bad"], "bad", 0.7, 0.22, 0.18)
-    f.bad:SetPoint("BOTTOMRIGHT", -12, 5)
+    -- the row at the foot, under the progress line (arrange() gives it its place): Good / Bad sit there
+    f.player = CreateFrame("Frame", nil, f)
+    f.player:SetHeight(22)
+    f.bad:SetPoint("RIGHT", f.player, "RIGHT", 0, 0)
     f.good:SetPoint("RIGHT", f.bad, "LEFT", -4, 0)
 
     local stop = CreateFrame("Button", nil, f, "UIPanelCloseButton")
@@ -382,36 +386,68 @@ local function create()
     f:SetScript("OnEnter", f.dimButtons)
     f:SetScript("OnLeave", f.dimButtons)
 
+    -- a page of the words, and on the line of what it's about which page it is when there are several (2/3)
+    f.showPage = function()
+        f.sub:SetText(pages[page].text)
+        f.about:SetText(f.aboutText .. (#pages > 1 and ("  |cff9d9d9d%d/%d|r"):format(page, #pages) or ""))
+    end
     f:SetScript("OnUpdate", function(self)
         if current and startedAt then
             local done = math.min(1, (GetTime() - startedAt) / math.max(current.d or 1, 0.1))
             self.progress:SetValue(done)
             if pages and pages[page + 1] and done >= pages[page + 1].at then
                 page = page + 1
-                self.sub:SetText(pages[page].text)
+                self.showPage()
             end
         end
     end)
     f:Hide()
 end
 
--- Without subtitles there is little to show: a slim window with only the name, who they are and what the line is
--- about, no portrait (thanks alche). With subtitles, the full window with the talking model.
-local function layout(compact)
-    if f.compact == compact then return end
-    f.compact = compact
-    f.window:SetShown(not compact)
-    f.name:ClearAllPoints()
-    if compact then
-        f.name:SetPoint("TOPLEFT", 12, -8)
-        f:SetWidth(320)
-        f.progress:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 12, 8)
-    else
-        f.name:SetPoint("TOPLEFT", f.window, "TOPRIGHT", 12, -6)
-        f:SetWidth(430)
-        f.progress:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 109, 10)
+-- Fixed bands, so nothing moves from one line to the next: the head (name and title, the X), the portrait and the
+-- words (always room for SUB_LINES lines), the progress line and the row at the foot. Without subtitles there
+-- is little to show: a slim window with only the head, what the line is about and the foot, no portrait (thanks
+-- alche). Cinematic: the same bands centred on the soft band, without the box and the portrait.
+local function arrange(compact)
+    local cine = f.cine
+    local shown = f.sub:GetText() -- the page on screen stays (an option changed while it talks)
+    f.sub:SetText(("Ag\n"):rep(SUB_LINES - 1) .. "Ag")
+    f.subHeight = f.sub:GetStringHeight()
+    f.sub:SetText(shown or ""); f.sub:SetShown(not compact)
+    f:SetWidth(cine and 640 or compact and 330 or 440)
+    local inset = cine and 50 or PAD
+    for _, r in ipairs({ f.name, f.about, f.sub, f.progress, f.player }) do r:ClearAllPoints() end
+    f.window:SetShown(not (cine or compact))
+    local just = cine and "CENTER" or "LEFT"
+    f.name:SetJustifyH(just); f.about:SetJustifyH(just); f.sub:SetJustifyH(just)
+    -- the head: the name (the title follows it on the same line, placed in T.Show); the X sits in the corner
+    f.name:SetPoint("TOPLEFT", inset, -8); f.name:SetPoint("TOPRIGHT", cine and -inset or -60, -8)
+    -- heights from the fonts, not the text: on the first line the name and the rest are still empty
+    local function lineHeight(fs) local _, size = fs:GetFont() return (size or 12) + 2 end
+    local top = 8 + lineHeight(f.name) + 8
+    -- the words: right of the portrait, or the whole width
+    local left = (cine or compact) and inset or PAD + 84 + 12
+    f.window:ClearAllPoints(); f.window:SetPoint("TOPLEFT", PAD, -top)
+    f.about:SetFontObject((compact and not cine) and GameFontNormal or GameFontNormalSmall)
+    f.about:SetPoint("TOPLEFT", left, -top); f.about:SetPoint("TOPRIGHT", -inset, -top)
+    local bottom = top + lineHeight(f.about)
+    if not compact then
+        -- under what it's about, both corners from it; cinematic a little wider: 36 from the edges
+        local wider = cine and 14 or 0
+        f.sub:SetPoint("TOPLEFT", f.about, "BOTTOMLEFT", -wider, -5)
+        f.sub:SetPoint("TOPRIGHT", f.about, "BOTTOMRIGHT", wider, -5)
+        bottom = bottom + 5 + f.subHeight
+        if not cine then bottom = math.max(bottom, top + 84) end
     end
-    f.name:SetPoint("RIGHT", -50, 0)
+    -- the progress line over the whole width (a short one in the middle for cinematic), the row at the foot under it
+    if cine then
+        f.progress:SetPoint("TOP", 0, -(bottom + 8)); f.progress:SetSize(200, 2)
+    else
+        f.progress:SetPoint("TOPLEFT", inset, -(bottom + 8)); f.progress:SetPoint("TOPRIGHT", -inset, -(bottom + 8))
+        f.progress:SetHeight(3)
+    end
+    f.player:SetPoint("TOPLEFT", inset, -(bottom + 16)); f.player:SetPoint("TOPRIGHT", -inset, -(bottom + 16))
+    f:SetHeight(bottom + 16 + FOOT + 8)
 end
 
 -- Two looks (option "Speaker window"): the window with the portrait, or cinematic: no box or portrait, the name, what
@@ -419,36 +455,19 @@ end
 local function applyStyle(compact)
     local cine = ns.settings.speakerStyle == "cinematic"
     local changed = f.cine ~= cine
-    f.cine = cine
+    f.cine, f.compact = cine, compact
     local bg = ns.settings.speakerBg or 1 -- the background's strength (option), 0 = only the words
     for _, t in ipairs(f.shade) do t:SetShown(cine and bg > 0); t:SetAlpha(bg) end
     if cine then
         f:SetBackdropColor(0, 0, 0, 0); f:SetBackdropBorderColor(0, 0, 0, 0)
-        f.window:Hide(); f.title:Hide()
-        f:SetWidth(640)
-        f.name:ClearAllPoints(); f.name:SetPoint("TOPLEFT", 50, -10); f.name:SetPoint("TOPRIGHT", -50, -10)
-        f.name:SetJustifyH("CENTER")
-        f.about:ClearAllPoints(); f.about:SetPoint("TOPLEFT", f.name, "BOTTOMLEFT", 0, -3)
-        f.about:SetPoint("TOPRIGHT", f.name, "BOTTOMRIGHT", 0, -3); f.about:SetJustifyH("CENTER")
-        f.sub:ClearAllPoints() -- under the name, both corners from "about" (inset 50), a little wider: 36 from the edges
-        f.sub:SetPoint("TOPLEFT", f.about, "BOTTOMLEFT", -14, -8); f.sub:SetPoint("TOPRIGHT", f.about, "BOTTOMRIGHT", 14, -8)
-        f.sub:SetJustifyH("CENTER")
+        f.title:Hide()
         f.sub:SetTextColor(1, 0.97, 0.9); f.sub:SetShadowOffset(1, -1); f.sub:SetShadowColor(0, 0, 0, 1)
-        f.progress:ClearAllPoints(); f.progress:SetPoint("BOTTOM", 0, 6); f.progress:SetSize(180, 2)
     else
         f:SetBackdropColor(0.07, 0.055, 0.04, 0.92 * bg); f:SetBackdropBorderColor(0.6, 0.48, 0.25, bg)
         f.title:Show()
-        f.name:SetJustifyH("LEFT")
-        f.about:ClearAllPoints(); f.about:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", 0, -8); f.about:SetPoint("RIGHT", -12, 0)
-        f.about:SetJustifyH("LEFT")
-        f.sub:ClearAllPoints(); f.sub:SetPoint("TOPLEFT", f.about, "BOTTOMLEFT", 0, -6); f.sub:SetPoint("RIGHT", -14, 0)
-        f.sub:SetJustifyH("LEFT"); f.sub:SetTextColor(0.92, 0.88, 0.8)
-        if changed then -- the window's own layout again (layout places the progress bar)
-            f.progress:ClearAllPoints(); f.progress:SetHeight(5)
-            f.compact = nil
-        end
-        layout(compact)
+        f.sub:SetTextColor(0.92, 0.88, 0.8)
     end
+    arrange(compact)
     if changed and not f.dockedTo then -- each look has its own place; cinematic starts low in the middle
         local pos = ns.settings[cine and "speakerPosCine" or "speakerPos"]
         f:ClearAllPoints()
@@ -469,7 +488,6 @@ function T.UpdateMarks()
         btn:SetBackdropColor(c[1], c[2], c[3], chosen and 1 or 0.15)
         btn:SetBackdropBorderColor(c[1], c[2], c[3], 1)
     end
-    if not f.cine then f.progress:SetPoint("RIGHT", on and -112 or -14, 0) end
 end
 
 local function showModel(who)
@@ -504,7 +522,7 @@ function T.Show(entry, key)
     local subtitle = ns.settings.subtitles and ns.Voice.Subtitle(key) or nil
     if ns.Speech and ns.Speech.Bubbled(key) then subtitle = nil end -- the bubble over their head has the words
     local compact = not (subtitle and subtitle ~= "")
-    layout(compact)
+    f.applySize() -- the subtitle size changes only here, with a new line: its pages are cut for it
     applyStyle(compact)
     local who = (entry.w and entry.w ~= "") and entry.w or "Narrator"  -- the voice data names these two in English
     f.name:SetText(who == "Narrator" and L["Narrator"] or who)
@@ -551,32 +569,32 @@ function T.Show(entry, key)
         if info and info.r then bits[#bits + 1] = info.r end
         f.title:SetText(table.concat(bits, "  "))
     end
-    f.about:SetText(about(key))
+    -- the title on the head line, right after the name
+    if not f.cine then
+        local width = math.min(f.name:GetStringWidth(), f:GetWidth() - 2 * PAD - 60 - 60)
+        f.title:ClearAllPoints()
+        f.title:SetPoint("BOTTOMLEFT", f.name, "BOTTOMLEFT", width + 8, 1); f.title:SetPoint("RIGHT", -60, 0)
+    end
+    f.aboutText = about(key)
+    f.about:SetText(f.aboutText)
     -- subtitles: long text is shown a page at a time, in step with the voice
     local text = subtitle
-    -- cinematic: a row of its own under the words for the Good / Bad buttons, so they don't cover the last line
-    local marks = (f.cine and ns.settings.checkVoices) and 20 or 0
     if not compact then
-        pages = paginate(text:gsub("[\r\n]+", " "))
+        -- pages of SUB_LINES lines, measured in the window itself (arrange() sized it for them)
+        local function fits(s)
+            f.sub:SetText((s:gsub("%s+$", "")))
+            return f.sub:GetStringHeight() <= f.subHeight + 1
+        end
+        pages = paginate(text:gsub("[\r\n]+", " "), fits)
         page = 1
         -- stage directions like <Kaltunk looks you over.> aren't spoken; show them grey
         for _, p in ipairs(pages) do p.text = p.text:gsub("<([^<>]+)>", "|cff9d9d9d<%1>|r") end
-        -- size the frame once for the tallest page, so it doesn't jump while talking
-        f.applySize()
-        local tallest = 0
-        for _, p in ipairs(pages) do
-            f.sub:SetText(p.text)
-            tallest = math.max(tallest, f.sub:GetStringHeight())
-        end
-        f.sub:SetText(pages[1].text)
+        f.showPage()
         f.sub:Show()
-        f:SetHeight(f.cine and (10 + f.name:GetStringHeight() + 3 + f.about:GetStringHeight() + 8 + tallest + 16 + marks)
-            or math.max(104, 74 + tallest + 22))
     else
         pages = nil
         f.sub:SetText("")
         f.sub:Hide()
-        f:SetHeight(f.cine and (10 + f.name:GetStringHeight() + 3 + f.about:GetStringHeight() + 14 + marks) or 76)
     end
     f.progress:SetValue(0)
     T.UpdateMarks()
