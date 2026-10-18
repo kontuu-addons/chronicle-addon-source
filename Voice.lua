@@ -276,12 +276,18 @@ end
 local playNext
 local playingKey
 local lastKey -- the last line that played, for Replay
+local history = {} -- the lines of this list that started, newest last: for the speaker window's Back
+local HISTORY = 10 -- lines kept for Back
+
+-- the speaker window shows how many lines wait: tell it when that changes outside of a line starting or stopping
+local function queueChanged()
+    if ns.TalkingHead and ns.TalkingHead.UpdateQueue then pcall(ns.TalkingHead.UpdateQueue) end
+end
 
 local startedTime = 0
 local function start(entry, key)
     paused = nil -- something new is talking: the paused line is let go
     stopSound()
-    playingKey = key
     lastKey = key or lastKey
     startedTime = GetTime()
     if ns.char and ns.char.heard and key and (key:match("^q%d") or key:sub(1, 4) == "book") then ns.char.heard[key] = true end
@@ -305,6 +311,11 @@ local function start(entry, key)
         return false
     end
     handle = h
+    playingKey = key -- only a line that really plays: Replay and Back work on it
+    if key and history[#history] ~= key then
+        history[#history + 1] = key
+        if #history > HISTORY then table.remove(history, 1) end
+    end
     ns.db.playing = h -- a /reload keeps the sound going; the next login stops it
     showBar(entry, key)
     timer = C_Timer.NewTimer((entry.d or 5) + 0.35, function()
@@ -326,8 +337,64 @@ playNext = function()
     queue = nil
 end
 
+-- How many lines wait for their turn (after a pause: the ones kept after the paused line).
+function V.QueueLength()
+    if paused then return #paused.keys - 1 end
+    return queue and #queue or 0
+end
+
+-- The lines waiting for their turn, as a list of their own.
+local function waitingLines()
+    return { unpack(paused and paused.keys or queue or {}, paused and 2 or 1) }
+end
+
+-- Play a line now with the given lines waiting after it. False when it can't play (the ones waiting go on then).
+local function playNow(key, rest)
+    local entry = V.Get(key)
+    if not entry then return false end
+    queue = #rest > 0 and rest or nil
+    if start(entry, key) then return true end
+    playNext()
+    return false
+end
+
+-- The speaker window's Replay: this line again from its start, the lines waiting still follow it.
+function V.Restart()
+    if not playingKey then return false end
+    return playNow(playingKey, waitingLines())
+end
+
+-- The line before this one in the same list (nil: the first, or a line played on its own), and where it is in the
+-- history.
+local function lineBefore()
+    local now = playingKey
+    if not now then return nil end
+    local i = #history
+    if history[i] == now then i = i - 1 end
+    local back = history[i]
+    if back and back ~= now and V.Get(back) then return back, i end
+end
+
+-- The speaker window's Back: the line before in the same list; this one waits first in line again. Greyed out (false)
+-- when there is none.
+function V.HasPrev() return lineBefore() ~= nil end
+function V.Prev()
+    local back, i = lineBefore()
+    if not back then return false end
+    local rest = { playingKey, unpack(waitingLines()) }
+    for j = #history, i, -1 do history[j] = nil end -- both leave the history; start() adds the line before again
+    return playNow(back, rest)
+end
+
 -- The talking head's X: skip to the next line waiting in the queue, or stop if nothing is waiting.
 function V.Skip()
+    if paused then -- paused: on to the line after the paused one
+        local p = paused
+        if #p.keys < 2 then return end
+        paused = nil
+        V.PlayQueue({ unpack(p.keys, 2) }, p.owner, true)
+        return
+    end
     if queue and #queue > 0 then
         stopSound()
         playNext()
@@ -356,7 +423,7 @@ function V.Resume()
     local p = paused
     if not p then return false end
     paused = nil
-    if not V.PlayQueue(p.keys, p.owner) then changed() return false end
+    if not V.PlayQueue(p.keys, p.owner, true) then changed() return false end
     return true
 end
 
@@ -386,6 +453,7 @@ function V.Play(key, by)
     if not entry then return false end
     queue = nil
     owner = by
+    history = {} -- a line played on its own: Back has nothing to go back to
     return start(entry, key)
 end
 
@@ -403,11 +471,13 @@ function V.Enqueue(key)
     if not V.Get(key) then return false end
     if paused then -- a recap after a turn-in, a book: after the paused lines
         paused.keys[#paused.keys + 1] = key
+        queueChanged()
         return true
     end
     if handle then
         queue = queue or {}
         queue[#queue + 1] = key
+        queueChanged()
         return true
     end
     return V.Play(key)
@@ -443,8 +513,10 @@ function V.OnQuestTurnedIn(questID)
     end)
 end
 
--- Play several lines back to back (chapter recaps).
-function V.PlayQueue(keys, by)
+-- Play several lines back to back (chapter recaps). A new list starts a new history for Back; keep: the same list
+-- goes on (after a pause, a skip while paused, a quest window closing).
+function V.PlayQueue(keys, by, keep)
+    if not keep then history = {} end
     stopSound()
     owner = by
     queue = {}
@@ -517,6 +589,7 @@ closeEv:SetScript("OnEvent", function()
             table.remove(queue, i)
         end
     end
+    queueChanged()
 end)
 
 local onGreeting
@@ -678,7 +751,7 @@ function V.OnQuestClosed()
     if ns.settings.stopOnClose and k and k:sub(1, 1) == "q" then
         local pending = queue
         V.Stop()
-        if pending and #pending > 0 then V.PlayQueue(pending) end
+        if pending and #pending > 0 then V.PlayQueue(pending, nil, true) end
     end
 end
 
