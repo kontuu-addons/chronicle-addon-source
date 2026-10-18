@@ -243,7 +243,9 @@ L["Open the journal"] = "Abrir el diario"
 -- campfire
 L["By the fire"] = "Junto al fuego"
 L["By the fire: %s"] = "Junto al fuego: %s"
-L["When you sit down by a camp fire, the narrator tells you a tale about the zone, once per character."] = "Al sentarte junto a una hoguera, el narrador te cuenta un relato sobre la zona, una vez por personaje."
+L["Near a camp fire, a short note says when the zone has a tale you haven't heard. Sit down, and the narrator tells it, once per character."] = "Cerca de una hoguera aparece un breve aviso si la zona tiene un relato que aún no conoces. Siéntate y el narrador lo cuenta, una vez por personaje."
+L["A campfire nearby"] = "Una hoguera cerca"
+L["Sit down for a while, and hear a tale of %s."] = "Siéntate un rato y escucha un relato de %s."
 
 -- tips and subtitle size
 L["Did you know?"] = "¿Sabías que...?"
