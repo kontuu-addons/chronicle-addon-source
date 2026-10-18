@@ -998,8 +998,22 @@ table.insert(ns.onLogin, function()
     end)
     recapBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     recapBtn:Hide()
-    -- the same two as tabs on the window's right side, like the journal's (option "Side tabs on the quest window")
+    -- the same two as tabs on the window's right side, like the journal's (option "Side tabs on the quest window"):
+    -- the game's own side tab where it has one (the icon fills the tab, cut to its shape), else one of our own
     local function sideTab(icon, onClick, tip)
+        local ok, tab = pcall(CreateFrame, "Button", nil, layer, "LargeSideTabButtonTemplate")
+        if ok and tab and tab.Icon and tab.SetFillToInterior and tab.SetCustomOnMouseUpHandler then
+            tab.Icon:SetTexture(icon)
+            tab:SetFillToInterior(true)
+            tab.icon = tab.Icon -- the code below swaps the icon (Listen / Stop)
+            tab:SetCustomOnMouseUpHandler(function(self, button, upInside)
+                if button == "LeftButton" and upInside then onClick(self) end
+            end)
+            tab.tooltipText = "" -- its text comes from tip(), which knows whether it talks
+            function tab:GetTooltipTextSetupFunction() return function() tip(self) return true end end
+            tab:Hide()
+            return tab
+        end
         local b = CreateFrame("Button", nil, layer)
         b:SetSize(48, 48)
         b.bg = b:CreateTexture(nil, "BACKGROUND")
