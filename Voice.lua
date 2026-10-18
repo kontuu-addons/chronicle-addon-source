@@ -386,7 +386,8 @@ function V.Prev()
     return playNow(back, rest)
 end
 
--- The talking head's X: skip to the next line waiting in the queue, or stop if nothing is waiting.
+-- The talking head's next button (and a right-click on it, the Skip key): skip to the next line waiting in the queue,
+-- or stop if nothing is waiting.
 function V.Skip()
     if paused then -- paused: on to the line after the paused one
         local p = paused

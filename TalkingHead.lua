@@ -1,5 +1,6 @@
 -- Chronicle / TalkingHead: who is speaking. The NPC's 3D model (talking), name, title and what the line is about,
--- with progress and a stop button. The narrator gets a book. Drag to move; position is remembered.
+-- with progress and a player row (back, play / stop, next, replay, how many lines wait). The narrator gets a book.
+-- Drag to move; position is remembered.
 local _, ns = ...
 local L = ns.L
 local T = {}
@@ -12,7 +13,7 @@ local pages, page -- subtitle pages of the current line: { text, at = share of t
 
 local SUB_LINES = 4 -- the words always have room for this many lines; longer text goes in pages of that size
 local PAD = 10 -- the window's margin
-local FOOT = 22 -- the height of the row at the foot
+local FOOT = 22 -- the player row's height
 
 -- Whole sentences per page, as many as fit (fits(text) measures them in the window, so bigger text makes more
 -- pages); a sentence longer than a page is split between words.
@@ -203,15 +204,27 @@ local function create()
     local bg = f.progress:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints(); bg:SetColorTexture(1, 1, 1, 0.08)
 
-    -- "Help check the voices": Good / Bad for the line that is playing (Bad asks what was wrong)
-    local function markButton(label, verdict, r, g, b)
-        local btn = CreateFrame("Button", nil, f, "BackdropTemplate")
-        btn:SetSize(44, 16)
-        btn:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-        btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        btn.text:SetPoint("CENTER"); btn.text:SetText(label)
-        btn.color = { r, g, b }
+    -- a button's tooltip, above it like the X's; text() returns the title and a line
+    local function tip(b, text)
+        b:SetScript("OnEnter", function(self)
+            local title, line = text()
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(title, 1, 1, 1)
+            if line then GameTooltip:AddLine(line, 0.8, 0.8, 0.8) end
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    end
+
+    -- "Help check the voices": Good / Bad for the line that is playing (Bad asks what was wrong), as the ready check's
+    -- tick and cross
+    local function markButton(icon, verdict)
+        local btn = CreateFrame("Button", nil, f)
+        btn:SetSize(16, 16)
+        btn:SetNormalTexture(icon)
+        btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
         btn.verdict = verdict
+        tip(btn, function() return verdict == "good" and L["Good"] or L["Bad"] end)
         -- Bad: a few fixed reasons, one click each, and "Something else..." for a note of your own. Fixed reasons are
         -- quicker to give and show patterns, like a voice that is always too high (thanks BuzzTea)
         local REASONS = {
@@ -300,88 +313,118 @@ local function create()
         end)
         return btn
     end
-    f.good = markButton(L["Good"], "good", 0.2, 0.55, 0.28)
-    f.bad = markButton(L["Bad"], "bad", 0.7, 0.22, 0.18)
-    -- the row at the foot, under the progress line (arrange() gives it its place): Good / Bad sit there
-    f.player = CreateFrame("Frame", nil, f)
-    f.player:SetHeight(22)
-    f.bad:SetPoint("RIGHT", f.player, "RIGHT", 0, 0)
-    f.good:SetPoint("RIGHT", f.bad, "LEFT", -4, 0)
+    f.good = markButton("Interface\\RaidFrame\\ReadyCheck-Ready", "good")
+    f.bad = markButton("Interface\\RaidFrame\\ReadyCheck-NotReady", "bad")
 
+    -- X: closes the window and stops the voice with everything waiting
     local stop = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     stop:SetSize(26, 26); stop:SetPoint("TOPRIGHT", 1, 1)
     f.stop = stop
-    -- click: next line in the queue (the last one closes it); shift-click: stop everything
+    stop:SetScript("OnClick", function() ns.Voice.Stop(); T.Hide(true) end)
+    stop:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(L["Close"], 1, 1, 1)
+        GameTooltip:AddLine(L["Stops the voice and the lines waiting"], 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+    stop:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    -- right-click anywhere on the window: the next line, or close after the last one; shift-right-click stops
+    -- everything (thanks timmeh)
     local function skip()
         if ns.Voice.Paused() then ns.Voice.Stop(); T.Hide(true) return end
         if not current then T.Hide(true) return end -- the line already ended (kept up for Good / Bad)
         if IsShiftKeyDown() then ns.Voice.Stop() else ns.Voice.Skip() end
     end
-    stop:SetScript("OnClick", skip)
-    stop:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText(L["Skip"], 1, 1, 1)
-        GameTooltip:AddLine(L["Click: on to the next line, or close after the last one"], 0.8, 0.8, 0.8)
-        GameTooltip:AddLine(L["Shift-click: stop everything"], 0.8, 0.8, 0.8)
-        GameTooltip:Show()
-    end)
-    stop:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    -- replay: the last line again (also /lore replay)
-    local replay = CreateFrame("Button", nil, f)
-    replay:SetSize(16, 16); replay:SetPoint("RIGHT", stop, "LEFT", 0, 0)
-    replay:SetNormalTexture("Interface\\Buttons\\UI-RefreshButton")
-    replay:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
-    replay:SetScript("OnClick", function() ns.Voice.Replay() end)
-    replay:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP"); GameTooltip:SetText(L["Replay"], 1, 1, 1); GameTooltip:Show()
-    end)
-    replay:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    f.replay = replay
-    -- pause: two bars while someone is talking, a play arrow while paused; hidden when nothing is (thanks Rhiload)
-    local pause = CreateFrame("Button", nil, f)
-    pause:SetSize(16, 16); pause:SetPoint("RIGHT", replay, "LEFT", -2, 0)
-    pause:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
-    pause.bars = {}
-    for i, x in ipairs({ -3, 3 }) do
-        local bar = pause:CreateTexture(nil, "ARTWORK")
-        bar:SetColorTexture(1, 0.82, 0, 1); bar:SetSize(3, 10); bar:SetPoint("CENTER", x, 0)
-        pause.bars[i] = bar
-    end
-    pause.play = pause:CreateTexture(nil, "ARTWORK")
-    pause.play:SetTexture("Interface\\ChatFrame\\ChatFrameExpandArrow")
-    pause.play:SetSize(14, 14); pause.play:SetPoint("CENTER", 1, 0)
-    pause.update = function()
-        local paused = ns.Voice.Paused()
-        pause:SetShown(paused or current ~= nil)
-        for _, bar in ipairs(pause.bars) do bar:SetShown(not paused) end
-        pause.play:SetShown(paused)
-    end
-    pause:SetScript("OnClick", function()
-        if ns.Voice.Paused() then ns.Voice.Resume() else ns.Voice.Pause() end
-    end)
-    pause:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        if ns.Voice.Paused() then
-            GameTooltip:SetText(L["Resume"], 1, 1, 1)
-            GameTooltip:AddLine(L["Plays the line again from its start, then the rest"], 0.8, 0.8, 0.8)
-        else
-            GameTooltip:SetText(L["Pause"], 1, 1, 1)
-            GameTooltip:AddLine(L["Keeps this line and the ones waiting after it"], 0.8, 0.8, 0.8)
-        end
-        GameTooltip:Show()
-    end)
-    pause:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    f.pause = pause
-    f.pausedText = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    f.pausedText:SetPoint("RIGHT", pause, "LEFT", -4, 0)
-    f.pausedText:SetText(L["Paused"])
-    f.pausedText:Hide()
-    -- right-click anywhere on the window does the same, wherever the X ends up (thanks timmeh)
     f:SetScript("OnMouseUp", function(_, button) if button == "RightButton" then skip() end end)
-    -- cinematic: the buttons stay faint until the mouse is over the band
+
+    -- the player row at the foot: the time on the left, back / stop / next in the middle, and on the right how many
+    -- lines wait, replay and Good / Bad. It never moves: arrange() gives every part of the window a fixed place.
+    f.player = CreateFrame("Frame", nil, f)
+    f.player:SetHeight(22)
+    f.player:Hide() -- OnUpdate shows it (cinematic: only while the mouse is on the band)
+    local function control(size, onClick, text)
+        local b = CreateFrame("Button", nil, f.player)
+        b:SetSize(size, size)
+        b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        b:SetScript("OnClick", onClick)
+        tip(b, text)
+        return b
+    end
+    -- the icons are flat shapes in the same gold: bars, squares and triangles, so play and stop look alike
+    local function bar(b, x, w, h, layer)
+        local t = b:CreateTexture(nil, layer or "ARTWORK")
+        t:SetColorTexture(1, 0.82, 0, 1); t:SetSize(w or 3, h or 10); t:SetPoint("CENTER", x, 0)
+        return t
+    end
+    -- a triangle: a square of colour with the two corners of one side pulled together (the chat frame's arrow
+    -- where the client can't do that)
+    local function arrow(b, x, left, h, layer)
+        h = h or 9
+        local t = b:CreateTexture(nil, layer or "ARTWORK")
+        t:SetSize(math.floor(h * 0.85 + 0.5), h); t:SetPoint("CENTER", x, 0)
+        if t.SetVertexOffset then
+            t:SetColorTexture(1, 0.82, 0, 1)
+            -- vertices: 1 top left, 2 bottom left, 3 top right, 4 bottom right
+            t:SetVertexOffset(left and 1 or 3, 0, -h / 2); t:SetVertexOffset(left and 2 or 4, 0, h / 2)
+        else
+            t:SetTexture("Interface\\ChatFrame\\ChatFrameExpandArrow"); t:SetSize(h * 1.5, h * 1.5)
+            if left then t:SetTexCoord(1, 0, 0, 1) end
+        end
+        return t
+    end
+    local function talking() return current ~= nil and not ns.Voice.Paused() end
+    -- stop / play: stop ends the line but keeps the ones waiting; play starts it again from its start (the game can't
+    -- hold a sound halfway, so there is no real pause; thanks Rhiload)
+    local function playOrStop()
+        if talking() then ns.Voice.Pause()
+        elseif ns.Voice.Paused() then ns.Voice.Resume()
+        else ns.Voice.Restart() end
+    end
+    f.back = control(18, function() ns.Voice.Prev() end, function() return L["Back"] end)
+    bar(f.back, -4); arrow(f.back, 2, true)
+    f.play = control(22, playOrStop, function()
+        if talking() then return L["Stop"], L["Keeps this line and the ones waiting after it"] end
+        if ns.Voice.Paused() then return L["Resume"], L["Plays the line again from its start, then the rest"] end
+        return L["Replay"]
+    end)
+    -- back, play, next and replay (right of next) as one group in the middle of the row
+    f.play:SetPoint("CENTER", f.player, "CENTER", -15, 0)
+    f.back:SetPoint("RIGHT", f.play, "LEFT", -5, 0)
+    f.play.square = bar(f.play, 0, 10, 10)
+    f.play.arrow = arrow(f.play, 1, false, 11)
+    f.next = control(18, function() ns.Voice.Skip() end, function() return L["Skip"] end)
+    f.next:SetPoint("LEFT", f.play, "RIGHT", 5, 0)
+    arrow(f.next, -2); bar(f.next, 5)
+    f.time = f.player:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    f.time:SetPoint("LEFT", 0, 0)
+    for _, b in ipairs({ f.good, f.bad }) do b:SetParent(f.player) end
+    f.bad:SetPoint("RIGHT", f.player, "RIGHT", 0, 0)
+    f.good:SetPoint("RIGHT", f.bad, "LEFT", -4, 0)
+    f.replay = control(16, function() ns.Voice.Restart() end, function() return L["Replay"] end)
+    f.replay:SetNormalTexture("Interface\\Buttons\\UI-RefreshButton")
+    f.replay:SetPoint("LEFT", f.next, "RIGHT", 14, 0)
+    f.count = f.player:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+
+    local function clock(s)
+        s = math.max(0, math.floor(s + 0.5))
+        return ("%d:%02d"):format(math.floor(s / 60), s % 60)
+    end
+    f.updateControls = function()
+        local on, paused, waiting = talking(), ns.Voice.Paused(), ns.Voice.QueueLength()
+        f.play.square:SetShown(on); f.play.arrow:SetShown(not on)
+        f.next:SetEnabled(waiting > 0); f.next:SetAlpha(waiting > 0 and 1 or 0.35) -- greyed out when nothing waits
+        local back = ns.Voice.HasPrev()
+        f.back:SetEnabled(back); f.back:SetAlpha(back and 1 or 0.35) -- greyed out for the first line, or one on its own
+        f.count:SetText(waiting > 0 and (L["%d more"]):format(waiting) or "")
+        -- stopped: says so; ended: the whole length, 0:31 / 0:31
+        if not on then
+            local length = f.duration and clock(f.duration)
+            f.time:SetText(paused and L["Stopped"] or length and (length .. " / " .. length) or "")
+        end
+    end
+    -- cinematic: the X stays faint until the mouse is over the band
     f.dimButtons = function()
-        local a = (f.cine and not f:IsMouseOver()) and 0.3 or 1
-        f.stop:SetAlpha(a); f.replay:SetAlpha(a); f.pause:SetAlpha(a)
+        f.stop:SetAlpha((f.cine and not f:IsMouseOver()) and 0.3 or 1)
     end
     f:SetScript("OnEnter", f.dimButtons)
     f:SetScript("OnLeave", f.dimButtons)
@@ -399,13 +442,18 @@ local function create()
                 page = page + 1
                 self.showPage()
             end
+            if talking() then self.time:SetText(clock(GetTime() - startedAt) .. " / " .. clock(current.d or 0)) end
         end
+        -- the player row: always in the window; cinematic shows it only while the mouse is on the band (its place
+        -- stays reserved, so nothing moves)
+        local over = not self.cine or self:IsMouseOver()
+        if over ~= self.player:IsShown() then self.player:SetShown(over) end
     end)
     f:Hide()
 end
 
 -- Fixed bands, so nothing moves from one line to the next: the head (name and title, the X), the portrait and the
--- words (always room for SUB_LINES lines), the progress line and the row at the foot. Without subtitles there
+-- words (always room for SUB_LINES lines), the progress line and the player row at the foot. Without subtitles there
 -- is little to show: a slim window with only the head, what the line is about and the foot, no portrait (thanks
 -- alche). Cinematic: the same bands centred on the soft band, without the box and the portrait.
 local function arrange(compact)
@@ -421,7 +469,7 @@ local function arrange(compact)
     local just = cine and "CENTER" or "LEFT"
     f.name:SetJustifyH(just); f.about:SetJustifyH(just); f.sub:SetJustifyH(just)
     -- the head: the name (the title follows it on the same line, placed in T.Show); the X sits in the corner
-    f.name:SetPoint("TOPLEFT", inset, -8); f.name:SetPoint("TOPRIGHT", cine and -inset or -60, -8)
+    f.name:SetPoint("TOPLEFT", inset, -8); f.name:SetPoint("TOPRIGHT", cine and -inset or -36, -8)
     -- heights from the fonts, not the text: on the first line the name and the rest are still empty
     local function lineHeight(fs) local _, size = fs:GetFont() return (size or 12) + 2 end
     local top = 8 + lineHeight(f.name) + 8
@@ -439,7 +487,7 @@ local function arrange(compact)
         bottom = bottom + 5 + f.subHeight
         if not cine then bottom = math.max(bottom, top + 84) end
     end
-    -- the progress line over the whole width (a short one in the middle for cinematic), the row at the foot under it
+    -- the progress line over the whole width (a short one in the middle for cinematic), the player row under it
     if cine then
         f.progress:SetPoint("TOP", 0, -(bottom + 8)); f.progress:SetSize(200, 2)
     else
@@ -484,10 +532,13 @@ function T.UpdateMarks()
     local mark = on and ns.db.checks and ns.db.checks[currentKey]
     for _, btn in ipairs({ f.good, f.bad }) do
         btn:SetShown(on)
-        local c, chosen = btn.color, mark == btn.verdict
-        btn:SetBackdropColor(c[1], c[2], c[3], chosen and 1 or 0.15)
-        btn:SetBackdropBorderColor(c[1], c[2], c[3], 1)
+        local chosen = mark == btn.verdict
+        btn:SetAlpha(chosen and 1 or mark and 0.3 or 0.75) -- the chosen one bright, the other faint
     end
+    -- the count of lines waiting sits left of them, or at the end of the row when they are off
+    f.count:ClearAllPoints()
+    if on then f.count:SetPoint("RIGHT", f.good, "LEFT", -10, 0)
+    else f.count:SetPoint("RIGHT", f.player, "RIGHT", 0, 0) end
 end
 
 local function showModel(who)
@@ -518,7 +569,8 @@ function T.Show(entry, key)
     if not f then create() end
     lingerToken = lingerToken + 1
     current, startedAt, currentKey = entry, GetTime(), key
-    f.pausedText:Hide(); f.pause.update()
+    f.duration = entry.d -- shown as 0:31 / 0:31 once the line has ended
+    f.updateControls()
     local subtitle = ns.settings.subtitles and ns.Voice.Subtitle(key) or nil
     if ns.Speech and ns.Speech.Bubbled(key) then subtitle = nil end -- the bubble over their head has the words
     local compact = not (subtitle and subtitle ~= "")
@@ -571,9 +623,9 @@ function T.Show(entry, key)
     end
     -- the title on the head line, right after the name
     if not f.cine then
-        local width = math.min(f.name:GetStringWidth(), f:GetWidth() - 2 * PAD - 60 - 60)
+        local width = math.min(f.name:GetStringWidth(), f:GetWidth() - 2 * PAD - 36 - 60)
         f.title:ClearAllPoints()
-        f.title:SetPoint("BOTTOMLEFT", f.name, "BOTTOMLEFT", width + 8, 1); f.title:SetPoint("RIGHT", -60, 0)
+        f.title:SetPoint("BOTTOMLEFT", f.name, "BOTTOMLEFT", width + 8, 1); f.title:SetPoint("RIGHT", -36, 0)
     end
     f.aboutText = about(key)
     f.about:SetText(f.aboutText)
@@ -649,7 +701,12 @@ function T.ShowPaused()
     if not (f and f:IsShown()) then return end
     current, startedAt = nil, nil
     pcall(f.model.SetAnimation, f.model, 0)
-    f.pausedText:Show(); f.pause.update()
+    f.updateControls()
+end
+
+-- the lines waiting changed (one was added or dropped): the count in the player row
+function T.UpdateQueue()
+    if f and f:IsShown() then f.updateControls() end
 end
 
 function T.Hide(now)
@@ -658,7 +715,7 @@ function T.Hide(now)
     if not now and f and f:IsShown() and currentKey and ns.settings.checkVoices then
         current, startedAt, pages = nil, nil, nil
         f.progress:SetValue(1)
-        f.pause.update()
+        f.updateControls()
         local token = lingerToken
         C_Timer.After(6, function()
             if token == lingerToken then T.Hide(true) end
