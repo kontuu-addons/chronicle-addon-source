@@ -6,6 +6,10 @@ local J = {}
 ns.Journal = J
 
 local W, H, LIST_W = 900, 580, 250
+-- the new style's grid, as in the game's own windows (ButtonFrameTemplate): the strip beside the round portrait holds
+-- the search, the list and the page start under it, the same margins all round
+local TOP, EDGE, GAP = -60, 12, 8
+local ROW_W = LIST_W - 28 -- a list row, inside the list's frame with room for its scrollbar
 local frame, list, listScroll, page, pageScroll, search
 local tab = "story"                -- "story", "people", "attune", "dungeons" or "beasts"
 local listRows, entryRows = {}, {}
@@ -566,7 +570,7 @@ local function getListRow(i)
     local r = listRows[i]
     if r then return r end
     r = CreateFrame("Button", nil, list)
-    r:SetSize(LIST_W - 22, 38)
+    r:SetSize(ROW_W, 38)
     r.hl = r:CreateTexture(nil, "HIGHLIGHT"); r.hl:SetAllPoints(); r.hl:SetColorTexture(1, 0.85, 0.5, 0.08)
     r.sel = r:CreateTexture(nil, "BACKGROUND"); r.sel:SetAllPoints(); r.sel:SetColorTexture(0.85, 0.68, 0.35, 0.2)
     r.title = text(r, "GameFontNormal"); r.title:SetPoint("TOPLEFT", 8, -5); r.title:SetPoint("RIGHT", -8, 0); r.title:SetWordWrap(false)
@@ -3752,7 +3756,7 @@ local function create()
         frame.optionsTab = options
         -- where the options page shows inside the journal
         frame.optionsHost = CreateFrame("Frame", nil, frame)
-        frame.optionsHost:SetPoint("TOPLEFT", 70, -40); frame.optionsHost:SetPoint("BOTTOMRIGHT", -14, 12)
+        frame.optionsHost:SetPoint("TOPLEFT", EDGE, TOP); frame.optionsHost:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
         frame.optionsHost:Hide()
         -- closing the journal on its Options tab: next time it opens on the story again
         frame:HookScript("OnHide", function()
@@ -3763,7 +3767,7 @@ local function create()
         share:SetPoint("TOPLEFT", options, "BOTTOMLEFT", 0, -4)
         frame.shareTab = share
         frame.shareHost = CreateFrame("Frame", nil, frame)
-        frame.shareHost:SetPoint("TOPLEFT", 70, -40); frame.shareHost:SetPoint("BOTTOMRIGHT", -14, 12)
+        frame.shareHost:SetPoint("TOPLEFT", EDGE, TOP); frame.shareHost:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
         frame.shareHost:Hide()
     else
         frame.tabStory = button(frame, L["The Story"], 100); frame.tabStory:SetPoint("LEFT", frame.titleText, "RIGHT", 12, 0)
@@ -3784,10 +3788,15 @@ local function create()
         options:SetScript("OnClick", openOptions)
     end
 
-    -- search (below the round portrait in the new style)
-    local topY = styled and -66 or -50
+    -- search: in the new style in the strip beside the round portrait, else above the list
+    local topY = -50
     search = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
-    search:SetSize(LIST_W - 26, 20); search:SetPoint("TOPLEFT", 20, topY); search:SetAutoFocus(false)
+    search:SetAutoFocus(false)
+    if styled then
+        search:SetPoint("TOPLEFT", 72, -32); search:SetPoint("RIGHT", frame, "LEFT", LIST_W + 2, 0); search:SetHeight(20)
+    else
+        search:SetSize(LIST_W - 26, 20); search:SetPoint("TOPLEFT", 20, topY)
+    end
     search.hint = text(search, "GameFontDisableSmall"); search.hint:SetPoint("LEFT", 4, 0); search.hint:SetText(L["Search quests, people, places"])
     search:SetScript("OnTextChanged", function(self)
         filter = (self:GetText() or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
@@ -3799,14 +3808,23 @@ local function create()
 
     -- left list
     listScroll = scrollFrame(frame, 60)
-    listScroll:SetPoint("TOPLEFT", 12, topY - 28); listScroll:SetPoint("BOTTOMLEFT", 12, 12); listScroll:SetWidth(LIST_W - 22)
-    list = CreateFrame("Frame", nil, listScroll); list:SetSize(LIST_W - 22, 10)
+    if styled then -- inside the list's frame (EDGE .. LIST_W + 2), 4 in from it
+        listScroll:SetPoint("TOPLEFT", EDGE + 4, TOP - 4); listScroll:SetPoint("BOTTOMLEFT", EDGE + 4, EDGE + 4)
+    else
+        listScroll:SetPoint("TOPLEFT", 12, topY - 28); listScroll:SetPoint("BOTTOMLEFT", 12, 12)
+    end
+    listScroll:SetWidth(ROW_W)
+    list = CreateFrame("Frame", nil, listScroll); list:SetSize(ROW_W, 10)
     listScroll:SetScrollChild(list)
 
     -- parchment page
     local paper = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     frame.paper = paper
-    paper:SetPoint("TOPLEFT", LIST_W + 10, styled and -32 or -46); paper:SetPoint("BOTTOMRIGHT", -12, 12)
+    if styled then
+        paper:SetPoint("TOPLEFT", LIST_W + 2 + GAP, TOP); paper:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
+    else
+        paper:SetPoint("TOPLEFT", LIST_W + 10, -46); paper:SetPoint("BOTTOMRIGHT", -12, 12)
+    end
     paper:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     paper:SetBackdropColor(0.9, 0.84, 0.7, 1)
     paper:SetBackdropBorderColor(0.45, 0.33, 0.16, 1)
@@ -3837,7 +3855,7 @@ local function create()
     -- list's frame goes with the list (the Options and Share tabs take its place)
     if styled then
         local box = CreateFrame("Frame", nil, frame)
-        box:SetPoint("TOPLEFT", listScroll, "TOPLEFT", -4, 4); box:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT", LIST_W + 4, 8)
+        box:SetPoint("TOPLEFT", EDGE, TOP); box:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT", LIST_W + 2, EDGE)
         if ns.ForeverInset(box) then
             listScroll:HookScript("OnShow", function() box:Show() end)
             listScroll:HookScript("OnHide", function() box:Hide() end)
