@@ -277,10 +277,23 @@ local function addQuestPins(map, zone)
         return spots[k]
     end
     local seen = {}
+    -- titles in the quest log or already handed in: WoW: Forever gives some quests in several copies (one per race
+    -- or class), and taking one leaves the others on offer to nobody
+    local taken = {}
+    local okN, n = pcall(function() return C_QuestLog.GetNumQuestLogEntries() end)
+    for i = 1, okN and tonumber(n) or 0 do
+        local ok, info = pcall(C_QuestLog.GetInfo, i)
+        if ok and type(info) == "table" and info.title and not info.isHeader then taken[info.title:lower()] = true end
+    end
+    for id in pairs(ns.char.done or {}) do
+        local qi = M.QuestInfo(id)
+        if qi and type(qi.t) == "string" then taken[qi.t:lower()] = true end
+    end
     local function consider(q)
         if not q.id or seen[q.id] then return end
         seen[q.id] = true
         if flagged(q.id) or inLog(q.id) then return end
+        if type(q.t) == "string" and taken[q.t:lower()] then return end
         -- a new Forever quest nobody has seen the level of: it may need a higher level, an earlier quest or another
         -- class, so it only shows once the game has offered it to this character
         if not (q.lvl and q.lvl > 0) and ns.IsNew(q.id) and not (ns.char.offered or {})[q.id] then return end

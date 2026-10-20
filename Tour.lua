@@ -39,6 +39,16 @@ local function show(title, text, anchor, side)
     bubble:SetHeight(10 + bubble.title:GetStringHeight() + 6 + bubble.text:GetStringHeight() + 42)
     bubble:ClearAllPoints()
     if anchor and anchor:IsVisible() then
+        -- no room where it should go (the anchor sits at the screen's edge): above falls back to the left, left to the
+        -- right; a frame too wide for either keeps its side, and the clamp to the screen does the rest
+        local k = anchor:GetEffectiveScale() / bubble:GetEffectiveScale()
+        local w = bubble:GetWidth() + 12
+        local roomLeft, roomRight = anchor:GetLeft() * k >= w, anchor:GetRight() * k + w <= UIParent:GetWidth()
+        if side == "above" and anchor:GetTop() * k + bubble:GetHeight() + 12 > UIParent:GetHeight() then
+            side = (roomLeft or not roomRight) and "left" or "right"
+        elseif side == "left" and not roomLeft and roomRight then
+            side = "right"
+        end
         if side == "left" then bubble:SetPoint("RIGHT", anchor, "LEFT", -12, 0)
         elseif side == "above" then bubble:SetPoint("BOTTOM", anchor, "TOP", 0, 12)
         else bubble:SetPoint("LEFT", anchor, "RIGHT", 12, 0) end
@@ -81,18 +91,26 @@ function Tour.Start()
           text = L["The book on the minimap opens your journal: each zone's story, your chapters with short recaps, and the Library of books you have read. Right-click it for the options. Also /lore."],
           prepare = function() return ns.Minimap and ns.Minimap.Button and ns.Minimap.Button() end },
         { title = L["Who is talking"], side = "above", needed = true,
-          text = L["When someone speaks, this window shows who it is and the words. The X skips a line, the arrow plays the last one again, and you can drag it anywhere. For subtitles like a film, choose Cinematic under Options."],
+          text = L["When someone speaks, this window shows who it is and the words. The row below has back, stop or play, next and replay; the X closes the window and stops everything. Drag it anywhere. For subtitles like a film, choose Cinematic under Options."],
           prepare = function()
               if not (ns.Voice and ns.Voice.Test and ns.Voice.Test()) then return nil end
               return ns.TalkingHead and ns.TalkingHead.Frame and ns.TalkingHead.Frame()
+          end,
+          leave = function() -- the test line needn't run on, and the window needn't linger for the voice check
+              if ns.Voice and ns.Voice.Stop then ns.Voice.Stop() end
+              if ns.TalkingHead and ns.TalkingHead.Hide then ns.TalkingHead.Hide(true) end
           end },
         { title = L["Make it yours"], side = "left", needed = true,
           text = L["A few things worth a look in the options:\n|cffffd100Speaker window style|r: a window with a portrait, or Cinematic subtitles.\n|cffffd100Sound channel|r: which volume slider the voices follow.\n|cffffd100What gets voiced|r: greetings, books, NPCs talking in the world, the narrator after a turn-in.\n|cffffd100Side tabs on the quest window|r: Listen and Recap as tabs.\n|cffffd100Journal only|r: the story without voices."],
           prepare = function()
               if not (ns.Options and ns.Options.Open and ns.Options.Open()) then return nil end
-              return SettingsPanel
+              -- the journal's Options tab, or the game's settings window on a client without it
+              return SettingsPanel and SettingsPanel:IsShown() and SettingsPanel or ns.Options.page
           end,
-          leave = function() if SettingsPanel and SettingsPanel:IsShown() then pcall(HideUIPanel, SettingsPanel) end end },
+          leave = function()
+              if SettingsPanel and SettingsPanel:IsShown() then pcall(HideUIPanel, SettingsPanel) end
+              if ChronicleJournalFrame and ChronicleJournalFrame:IsShown() then ChronicleJournalFrame:Hide() end
+          end },
         { title = L["No voice yet?"],
           text = L["WoW: Forever keeps adding quests. When one has no voice, Chronicle keeps its text: type |cffffd100/lore share|r and send it in, and it gets a voice in the next update.\n\n|cffffd100/lore tour|r shows this tour again."] },
     }
@@ -127,6 +145,6 @@ table.insert(ns.onLogin, function()
     if ns.db.tourDone or not ns.db.tourPending then return end
     C_Timer.After(10, function()
         if StaticPopup_Visible and StaticPopup_Visible("CHRONICLE_PACKS") then return end
-        Tour.Start()
+        ns.AfterCutscene(Tour.Start) -- a new character's intro plays first
     end)
 end)

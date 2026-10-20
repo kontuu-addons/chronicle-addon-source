@@ -5,6 +5,9 @@
 	<Binding name="CHRONICLE_SKIP" category="ADDONS">
 		ChronicleBinding_Skip()
 	</Binding>
+	<Binding name="CHRONICLE_BACK" category="ADDONS">
+		ChronicleBinding_Back()
+	</Binding>
 	<Binding name="CHRONICLE_JOURNAL" category="ADDONS">
 		ChronicleBinding_Journal()
 	</Binding>

@@ -1,4 +1,5 @@
--- Chronicle / Options: Esc > Options > AddOns > Chronicle (also /lore options).
+-- Chronicle / Options: the Options tab of the journal (also /lore options and a right-click on the minimap book). The
+-- game's settings window (Esc > Options > AddOns > Chronicle) only has a button that opens it.
 local _, ns = ...
 local L = ns.L
 local O = {}
@@ -14,7 +15,7 @@ local function volCvar() local _, ch = ns.Voice.Channel() return ch.vol end
 local GREYED = { -- off while "Journal only" is on
     voice = true, recapAfterTurnIn = true, greetings = true, books = true, worldSpeech = true, ghostQuips = true,
     reactions = true, speaker = true, subtitles = true, bigSubtitles = true, skipHeard = true, stopOnClose = true,
-    muteGameGreetings = true, ttsFallback = true, checkVoices = true,
+    muteGameGreetings = true, ttsFallback = true, checkVoices = true, speakerPlayer = true, questEndsGreeting = true,
 }
 local ON_CHANGE = {
     minimap = function() ns.Minimap.Update() end,
@@ -27,6 +28,19 @@ local ON_CHANGE = {
     muteGameGreetings = function() ns.ApplyGreetingMute() end,
     greetings = function() ns.ApplyGreetingMute() end,
     journalOnly = function() ns.SetJournalOnly(ns.settings.journalOnly) end,
+}
+
+-- Under each section's "More options" (folded until opened; the page remembers which are open): the settings most
+-- players never need. Keys of checkboxes, or a slider's label.
+local MORE = {
+    bgVoices = true,
+    questEndsGreeting = true, ["Greet me again after"] = true, mixedSure = true, ghostQuips = true, reactions = true,
+    lockSpeaker = true, bigSubtitles = true, skipHeard = true, stopOnClose = true, muteGameGreetings = true,
+    ttsFallback = true, speakerStays = true,
+    chroniclePause = true, zoneRecap = true, logStory = true, tips = true, levelMilestones = true, flightStory = true,
+    hideUnfound = true, showLeft = true, questTabs = true, newMarker = true,
+    questHints = true, questMarkers = true, minimapFree = true,
+    shareNudge = true,
 }
 
 local function build()
@@ -48,6 +62,8 @@ local function build()
     -- Every option is a row; a section and its rows are a group. layout() puts the groups in one column, or two
     -- when the page is wide (inside the journal), and runs again whenever the page changes size.
     local widgets, groups, cur = {}, {}, nil
+    local moreLabel = {}
+    for k in pairs(MORE) do moreLabel[L[k]] = true end
     local function newRow(h)
         local r = CreateFrame("Frame", nil, content)
         r:SetHeight(h)
@@ -66,7 +82,7 @@ local function build()
     -- section headings on the game's ornate header bar (the character window's), plain text where it doesn't exist
     local bar = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo("UI-Character-Info-Title")
     local function section(title)
-        cur = { rows = {} }
+        cur = { rows = {}, title = title }
         groups[#groups + 1] = cur
         local r = newRow(bar and 42 or 30)
         if bar then
@@ -84,6 +100,7 @@ local function build()
     -- a checkbox; get and set default to ns.settings[key]
     local function box(key, name, tip, get, set)
         local r = newRow(28)
+        r.more = MORE[key]
         local cb = CreateFrame("CheckButton", nil, r, "UICheckButtonTemplate")
         cb:SetSize(26, 26)
         cb:SetPoint("LEFT", 10, 0)
@@ -113,6 +130,7 @@ local function build()
     -- line up on the right edge of the column.
     local function slider(name, tip, lo, hi, step, get, set, fmt, enabled)
         local r = newRow(32)
+        r.more = moreLabel[name] -- (sliders get their label already translated)
         local label = r:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
         label:SetPoint("LEFT", 14, 0)
         label:SetText(name)
@@ -203,6 +221,7 @@ local function build()
     box("voice", L["Voice quest givers"], L["NPCs speak their quest text when you open a quest."])
     box("recapAfterTurnIn", L["Narrator after turn-in"], L["After you hand in a quest, the narrator tells what it meant for the story."])
     box("greetings", L["Voice NPC greetings"], L["NPCs speak the text of their greeting window when you talk to them."])
+    box("questEndsGreeting", L["A quest ends the greeting"], L["When you take a quest after listening to an NPC's welcome for a while, the welcome stops and the quest plays. A quest that opens right away (an auto-accept addon) still lets the greeting finish first. Untick to always let greetings finish."])
     slider(L["Greet me again after"], L["How long before an NPC's greeting plays again when you talk to them. 0 = every time."],
         0, 60, 5, function() return ns.settings.greetCooldown or ns.DEFAULTS.greetCooldown end,
         function(v) ns.settings.greetCooldown = v end,
@@ -219,6 +238,9 @@ local function build()
     slider(L["Window background"], L["How dark the speaker window's background is: the box of the window, or the shade behind the cinematic subtitles. All the way left shows only the words."],
         0, 1, 0.05, function() return ns.settings.speakerBg or 1 end, function(v) ns.settings.speakerBg = v; if ns.TalkingHead then ns.TalkingHead.Restyle() end end,
         function(v) return math.floor(v * 100 + 0.5) .. "%" end, function() return ns.settings.speaker and true or false end)
+    box("speakerPlayer", L["Player controls"], L["A row at the foot of the speaker window with the time, back, stop, next and replay (in cinematic it shows while the mouse is over it). Untick for a plainer window with just play and replay next to the X."],
+        nil, function(v) ns.settings.speakerPlayer = v; if ns.TalkingHead and ns.TalkingHead.Restyle then ns.TalkingHead.Restyle() end end)
+    box("speakerStays", L["Keep the speaker window open"], L["After the last line the window stays until you close it, so you can play the line again, go back or mark it. Untick to close it when the voice ends."])
     box("lockSpeaker", L["Lock the speaker window"], L["The speaker window and the cinematic subtitles stay where they are and can't be moved by accident. Untick to drag them again."])
     -- the speaker window's look: the window with the portrait, or cinematic (thanks Alche and Hedge)
     do
@@ -327,7 +349,29 @@ local function build()
         StaticPopup_Show("CHRONICLE_RESET")
     end)
 
+    -- "More options" at the foot of a section: a click folds the rest of its settings open or shut
+    local relayout
+    local function moreToggle(g)
+        local b = CreateFrame("Button", nil, content)
+        b:SetHeight(24)
+        b.text = b:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        b.text:SetPoint("LEFT", 14, 0)
+        b.update = function(open)
+            b.text:SetText((open and "- " or "+ ") .. (open and L["Fewer options"] or L["More options"]))
+        end
+        b:SetScript("OnClick", function()
+            ns.db.optionsMore = ns.db.optionsMore or {}
+            ns.db.optionsMore[g.title] = not ns.db.optionsMore[g.title] or nil
+            if SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end
+            if relayout then relayout() end
+        end)
+        b:SetScript("OnEnter", function(self) self.text:SetTextColor(1, 1, 1) end)
+        b:SetScript("OnLeave", function(self) self.text:SetTextColor(1, 0.82, 0) end)
+        return b
+    end
+    local lastW
     local function layout(w)
+        lastW = w
         local cols = w >= 700 and 2 or 1
         local gap = 36
         local colW = (w - 24 - (cols - 1) * gap) / cols
@@ -337,7 +381,21 @@ local function build()
             local c = 1 -- the shortest column so far
             for k = 2, cols do if h[k] < h[c] then c = k end end
             local x = 12 + (c - 1) * (colW + gap)
-            for _, r in ipairs(g.rows) do
+            local main, extra = {}, {}
+            for _, r in ipairs(g.rows) do table.insert(r.more and extra or main, r) end
+            if #extra > 0 and not g.toggle then g.toggle = moreToggle(g) end
+            local open = ns.db.optionsMore and ns.db.optionsMore[g.title]
+            local order = {}
+            for _, r in ipairs(main) do order[#order + 1] = r end
+            if g.toggle then
+                order[#order + 1] = g.toggle
+                g.toggle.update(open)
+                for _, r in ipairs(extra) do
+                    r:SetShown(open and true or false)
+                    if open then order[#order + 1] = r end
+                end
+            end
+            for _, r in ipairs(order) do
                 r:ClearAllPoints()
                 r:SetPoint("TOPLEFT", content, "TOPLEFT", x, -h[c])
                 r:SetWidth(colW)
@@ -352,6 +410,8 @@ local function build()
         footer:SetWidth(w - 24)
         content:SetHeight(tallest + 72)
     end
+    relayout = function() if lastW then layout(lastW) end end
+
     scroll:SetScript("OnSizeChanged", function(_, w)
         content:SetWidth(w)
         layout(w)
@@ -362,10 +422,28 @@ local function build()
     end
     page:SetScript("OnShow", O.Refresh) -- /lore commands may have changed something meanwhile
 
-    local category = Settings.RegisterCanvasLayoutCategory(page, "Chronicle")
+    O.page = page
+
+    -- the game's settings window gets only a way to the journal's Options tab; a client without that tab shows the
+    -- page here instead
+    local stub = CreateFrame("Frame")
+    stub:Hide()
+    local title = stub:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16); title:SetText("Chronicle")
+    local note = stub:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    note:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -10); note:SetText(L["Chronicle's options are in its journal."])
+    local open = CreateFrame("Button", nil, stub, "UIPanelButtonTemplate")
+    open:SetSize(200, 24); open:SetPoint("TOPLEFT", note, "BOTTOMLEFT", 0, -12)
+    open:SetText(L["Open Chronicle's options"]); ns.FitButton(open)
+    open:SetScript("OnClick", function() O.Open() end)
+    stub:SetScript("OnShow", function(self)
+        if ns.Journal and ns.Journal.HasOptionsTab and ns.Journal.HasOptionsTab() then return end
+        title:Hide(); note:Hide(); open:Hide()
+        O.Embed(self)
+    end)
+    local category = Settings.RegisterCanvasLayoutCategory(stub, "Chronicle")
     Settings.RegisterAddOnCategory(category)
     O.category = category
-    O.page = page
 end
 
 -- Options > Reset to defaults. Journal only stays as the edition or game language set it (Story Journal, non-English).
@@ -389,8 +467,7 @@ function O.Set(key, value)
     if O.page and O.page:IsVisible() and O.Refresh then O.Refresh() end
 end
 
--- The same page inside the journal (its Options tab), borrowed while the journal shows it. The settings window
--- puts it back in place whenever it opens.
+-- The page inside the journal (its Options tab), or inside the game's settings window on a client without that tab.
 function O.Embed(host)
     if not O.page then return false end
     if O.page:GetParent() ~= host then O.home = O.page:GetParent() end
@@ -405,20 +482,24 @@ end
 function O.Unembed(host)
     if not (O.page and O.page:GetParent() == host) then return end
     O.page:Hide()
+    -- no settings page to go back to (the options live in the journal): stay put, so the page keeps its size and
+    -- needn't lay itself out again (a frame late) the next time it shows
+    if not O.home then return end
     -- back where the settings window keeps it
     O.page:SetParent(O.home)
     O.page:ClearAllPoints()
-    if O.home then O.page:SetAllPoints(O.home) end
+    O.page:SetAllPoints(O.home)
 end
 
 -- The game won't open its settings window in combat: wait for the fight to end, then open it.
 local afterCombat = CreateFrame("Frame")
 afterCombat:SetScript("OnEvent", function(self)
     self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-    O.Open()
+    O.OpenSettings()
 end)
 
-function O.Open()
+-- The game's settings window on Chronicle's page (the old way, for a journal without an Options tab).
+function O.OpenSettings()
     if InCombatLockdown() then
         ns.pr(L["the options open when you leave combat."])
         afterCombat:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -427,6 +508,15 @@ function O.Open()
     if O.category then Settings.OpenToCategory(O.category:GetID())
     else ns.pr(L["the options panel is not available in this client. Use /lore voice, /lore stoponclose."]) end
     return true
+end
+
+-- The options: the journal on its Options tab (also in combat), else the game's settings window.
+function O.Open()
+    if ns.Journal and ns.Journal.ShowOptions and ns.Journal.ShowOptions() then
+        if SettingsPanel and SettingsPanel:IsShown() then pcall(HideUIPanel, SettingsPanel) end
+        return true
+    end
+    return O.OpenSettings()
 end
 
 table.insert(ns.onLogin, function()

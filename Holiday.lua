@@ -63,6 +63,8 @@ end
 local function announce(now)
     if not (ns.char and ns.Reminder and ns.Journal) then return end
     ns.char.holidays = ns.char.holidays or {}
+    -- once: holidays announced with the other faction's chapter (before the faction check) get their own
+    if not ns.char.holidaysSide then ns.char.holidays, ns.char.holidaysSide = {}, true end
     for event in pairs(on) do
         local seen = ns.char.holidays[event]
         if seen ~= now.year then

@@ -50,20 +50,33 @@ local function build()
             toLocal[en] = toLocal[en] or name
         end
     end
+    if next(toEN) == nil then toEN, toLocal = nil, nil end -- map data not ready yet: try again next time
+end
+
+-- the English zone name for a map ID, the same on every client (nil for maps that aren't one of the zones)
+function ns.zoneOfMap(map)
+    return map and ZONES[map]
+end
+
+-- true for a zone, dungeon or raid name as the story data spells it
+local KNOWN = {}
+for _, t in ipairs({ ZONES, INSTANCES }) do for _, en in pairs(t) do KNOWN[en] = true end end
+function ns.zoneKnown(name)
+    return KNOWN[name] == true
 end
 
 -- the English name the story data uses, for a zone name the game gave us
 function ns.zoneEN(name)
     if ENGLISH or not name or name == "" then return name end
     if not toEN then build() end
-    return toEN[name] or name
+    return toEN and toEN[name] or name
 end
 
 -- the zone's name in the player's language, for display (journal groups that aren't zones come from the translations)
 function ns.zoneLocal(name)
     if ENGLISH or not name or name == "" then return name end
     if not toLocal then build() end
-    return toLocal[name] or rawget(ns.L, name) or name
+    return toLocal and toLocal[name] or rawget(ns.L, name) or name
 end
 
 -- ---------------------------------------------------------------- interface text

@@ -40,12 +40,21 @@ function V.IsPlaying() return handle ~= nil end
 
 -- The button that started what is playing, so only that one turns into Stop.
 local owner
+local ownedBy = {} -- [key] = the button that queued it (PlayQueue); lines queued by the game have none
 function V.Owner() return handle and owner or nil end
 
 -- Subtitles: the text of a line, for the talking head. Recaps and chapter intros come from the lore data,
 -- quest lines from the text recorded when the quest window opened, the rest from what was on screen.
 local shownText = {}
-function V.SetText(key, text) shownText[key] = text end
+function V.SetText(key, text)
+    -- plaques and some books are small HTML pages (<P align="center">): the words only, a paragraph a line (thanks
+    -- Azona). Quest texts' own <descriptions> are no HTML and stay
+    if type(text) == "string" and (text:find("</[Pp]>") or text:find("<[Hh][Tt][Mm][Ll]>")) then
+        text = text:gsub("</?[Pp][^>]*>", "\n"):gsub("<[Bb][Rr]%s*/?>", "\n"):gsub("<[^>]*>", "")
+            :gsub("&lt;", "<"):gsub("&gt;", ">"):gsub("&amp;", "&"):gsub("[ \t]*\n%s*", "\n"):gsub("^%s+", ""):gsub("%s+$", "")
+    end
+    shownText[key] = text
+end
 
 function V.Subtitle(key)
     if not key then return nil end
@@ -55,7 +64,9 @@ function V.Subtitle(key)
     if id then return l.quests and l.quests[tonumber(id)] and l.quests[tonumber(id)].summary end
     local zone = key:match("^zone:(.+)")
     if zone then return l.zoneIntro and l.zoneIntro[zone] end
-    local tale = key:match("^tale:(.+)")
+    local tale, n = key:match("^tale:([^:]+):(%d+)$")
+    if tale then return l.campfireMore and l.campfireMore[tale] and l.campfireMore[tale][tonumber(n) - 1] end
+    tale = key:match("^tale:(.+)")
     if tale then return l.campfire and l.campfire[tale] end
     local lvl = key:match("^lvl:(.+)")
     if lvl then return l.levels and l.levels[lvl] end
@@ -89,16 +100,26 @@ function V.Subtitle(key)
     end
     -- greetings and chatter: their words come with the voice pack
     local e = ns.audio and ns.audio[key]
-    if e and type(e.x) == "string" then return e.x end
+    if e and type(e.x) == "string" then
+        -- the words are as the voice was told to say them: names respelled for it ("Gold shire") read as written
+        local x = e.x
+        for say, word in pairs(l.respelled or {}) do
+            if x:find(say, 1, true) then x = x:gsub(say:gsub("%p", "%%%0"), (word:gsub("%%", "%%%%"))) end
+        end
+        return x
+    end
 end
 
 -- ---------------------------------------------------------------- who is speaking (TalkingHead.lua draws it)
 local function showBar(entry, key)
+    -- a window still up with a line that ended goes when one plays that it doesn't show: its buttons would work on
+    -- that one while it shows the old one
+    local function notShown() if ns.TalkingHead then pcall(ns.TalkingHead.Hide, true) end end
     -- NPCs talking in the world already have the game's speech bubble; a window popping up for every chatter line is noise
-    if key and key:sub(1, 4) == "say:" then return end
+    if key and key:sub(1, 4) == "say:" then return notShown() end
     -- Immersion's talk box already shows the NPC and the text of quest pages and greetings
     local npcLine = key and (key:match("^q%d") or key:sub(1, 4) == "gos:" or key:sub(1, 3) == "qg:")
-    if npcLine and ns.ExternalDialogShown and ns.ExternalDialogShown() then return end
+    if npcLine and ns.ExternalDialogShown and ns.ExternalDialogShown() then return notShown() end
     if ns.settings.speaker and ns.TalkingHead then
         local ok, err = pcall(ns.TalkingHead.Show, entry, key)
         if not ok and ns.settings.debug then ns.pr("debug: talking head error: " .. tostring(err)) end
@@ -172,19 +193,27 @@ local function holdDuck()
         ns.db.duckSaved = saved
     end
     local _, ch = V.Channel()
+    ns.db.duckSet = {}
     for _, cv in ipairs(DUCK) do -- never the channel Chronicle itself plays on
-        if saved[cv] and cv ~= ch.vol then pcall(SetCVar, cv, saved[cv] * DUCK_TO) end
+        if saved[cv] and cv ~= ch.vol then
+            pcall(SetCVar, cv, saved[cv] * DUCK_TO)
+            ns.db.duckSet[cv] = tonumber(GetCVar(cv)) -- as the game keeps it, rounding and all
+        end
     end
 end
 
 local function releaseDuck(now)
     local saved = ns.db and ns.db.duckSaved
     if not saved then return end
+    -- already fading back up: let it finish (a second call mid-fade found the music half way up, took it for a
+    -- change by hand and left it there; thanks Azona)
+    if duckFade and not now then return end
     if duckFade then duckFade:Cancel(); duckFade = nil end
+    local set = ns.db.duckSet or {}
     local mine = {} -- the levels still where Chronicle put them (not changed by hand while it talked)
     for _, cv in ipairs(DUCK) do
-        local cur = tonumber(GetCVar(cv))
-        if saved[cv] and cur and math.abs(cur - saved[cv] * DUCK_TO) < 0.02 then mine[#mine + 1] = cv end
+        local cur, put = tonumber(GetCVar(cv)), set[cv] or (saved[cv] and saved[cv] * DUCK_TO)
+        if saved[cv] and cur and put and math.abs(cur - put) <= math.max(0.02, put * 0.15) then mine[#mine + 1] = cv end
     end
     local step, steps = 0, now and 1 or 8
     local function tick()
@@ -193,7 +222,7 @@ local function releaseDuck(now)
         for _, cv in ipairs(mine) do pcall(SetCVar, cv, saved[cv] * f) end
         if step >= steps then
             if duckFade then duckFade:Cancel(); duckFade = nil end
-            ns.db.duckSaved = nil
+            ns.db.duckSaved, ns.db.duckSet = nil, nil
         end
     end
     if now then tick() else duckFade = C_Timer.NewTicker(0.08, tick, steps) end
@@ -252,6 +281,7 @@ end
 
 function V.Speak(text, female)
     if ns.settings.journalOnly or not (text and text ~= "" and C_VoiceChat and C_VoiceChat.SpeakText) then return false end
+    if handle then return false end -- a real recording is playing: the stand-in voice never talks over it or empties the queue
     local id = ttsVoiceID(female)
     if not id then return false end
     stopSound()
@@ -269,22 +299,29 @@ function V.Speak(text, female)
 end
 
 function V.Stop()
-    queue, paused = nil, nil
+    queue, paused, ownedBy = nil, nil, {}
     stopSound()
+    -- stopped on purpose: the speaker window goes too (a line that ends by itself leaves it up until it is closed)
+    if ns.TalkingHead then pcall(ns.TalkingHead.Hide, true) end
 end
 
 local playNext
 local playingKey
 local lastKey -- the last line that played, for Replay
+local history = {} -- the lines of this list that started, newest last: for the speaker window's Back
+local HISTORY = 10 -- lines kept for Back
+
+-- the speaker window shows how many lines wait: tell it when that changes outside of a line starting or stopping
+local function queueChanged()
+    if ns.TalkingHead and ns.TalkingHead.UpdateQueue then pcall(ns.TalkingHead.UpdateQueue) end
+end
 
 local startedTime = 0
 local function start(entry, key)
     paused = nil -- something new is talking: the paused line is let go
     stopSound()
     playingKey = key
-    lastKey = key or lastKey
     startedTime = GetTime()
-    if ns.char and ns.char.heard and key and (key:match("^q%d") or key:sub(1, 4) == "book") then ns.char.heard[key] = true end
     holdBackground()
     holdDuck()
     local willPlay, h = PlaySoundFile("Interface\\AddOns\\" .. entry.p .. "\\Audio\\" .. entry.f, (V.Channel()))
@@ -305,6 +342,13 @@ local function start(entry, key)
         return false
     end
     handle = h
+    -- heard once it really plays: a file that failed would otherwise be skipped as "already heard" from then on
+    if ns.char and ns.char.heard and key and (key:match("^q%d") or key:sub(1, 4) == "book") then ns.char.heard[key] = true end
+    lastKey = key or lastKey -- only a line that really plays: Replay, Play/Stop and /lore report use it
+    if key and history[#history] ~= key then -- Back steps through the lines that really played
+        history[#history + 1] = key
+        if #history > HISTORY then table.remove(history, 1) end
+    end
     ns.db.playing = h -- a /reload keeps the sound going; the next login stops it
     showBar(entry, key)
     timer = C_Timer.NewTimer((entry.d or 5) + 0.35, function()
@@ -321,13 +365,71 @@ playNext = function()
     while queue and #queue > 0 do
         local key = table.remove(queue, 1)
         local entry = V.Get(key)
+        owner, ownedBy[key] = ownedBy[key], nil -- each line its own owner: a chapter's button, or none for the game's
         if entry and start(entry, key) then return end
     end
     queue = nil
 end
 
--- The talking head's X: skip to the next line waiting in the queue, or stop if nothing is waiting.
+-- How many lines wait for their turn (after a pause: the ones kept after the paused line).
+function V.QueueLength()
+    if paused then return #paused.keys - 1 end
+    return queue and #queue or 0
+end
+
+-- The lines waiting for their turn, as a list of their own.
+local function waitingLines()
+    return { unpack(paused and paused.keys or queue or {}, paused and 2 or 1) }
+end
+
+-- Play a line now with the given lines waiting after it. False when it can't play (the ones waiting go on then).
+local function playNow(key, rest)
+    local entry = V.Get(key)
+    if not entry then return false end
+    queue = #rest > 0 and rest or nil
+    if start(entry, key) then return true end
+    playNext()
+    return false
+end
+
+-- The speaker window's Replay: this line again from its start, the lines waiting still follow it.
+function V.Restart()
+    if not playingKey then return false end
+    return playNow(playingKey, waitingLines())
+end
+
+-- The line before this one in the same list (nil: the first, or a line played on its own), and where it is in the
+-- history.
+local function lineBefore()
+    local now = playingKey
+    if not now then return nil end
+    local i = #history
+    if history[i] == now then i = i - 1 end
+    local back = history[i]
+    if back and back ~= now and V.Get(back) then return back, i end
+end
+
+-- The speaker window's Back: the line before in the same list; this one waits first in line again. Greyed out (false)
+-- when there is none.
+function V.HasPrev() return lineBefore() ~= nil end
+function V.Prev()
+    local back, i = lineBefore()
+    if not back then return false end
+    local rest = { playingKey, unpack(waitingLines()) }
+    for j = #history, i, -1 do history[j] = nil end -- both leave the history; start() adds the line before again
+    return playNow(back, rest)
+end
+
+-- The talking head's next button (and a right-click on it, the Skip key): skip to the next line waiting in the queue,
+-- or stop if nothing is waiting.
 function V.Skip()
+    if paused then -- paused: on to the line after the paused one
+        local p = paused
+        if #p.keys < 2 then return end
+        paused = nil
+        V.PlayQueue({ unpack(p.keys, 2) }, p.owner, true)
+        return
+    end
     if queue and #queue > 0 then
         stopSound()
         playNext()
@@ -356,7 +458,7 @@ function V.Resume()
     local p = paused
     if not p then return false end
     paused = nil
-    if not V.PlayQueue(p.keys, p.owner) then changed() return false end
+    if not V.PlayQueue(p.keys, p.owner, true) then changed() return false end
     return true
 end
 
@@ -380,13 +482,17 @@ function V.Test()
     return V.Play(key)
 end
 
--- Play one line. Returns false when there is no recording for it.
+-- Play one line now. Returns false when there is no recording for it. Lines waiting their turn keep waiting and
+-- follow it (a Listen click used to throw them away); only Stop empties the queue.
 function V.Play(key, by)
     local entry = V.Get(key)
     if not entry then return false end
-    queue = nil
+    for i = #(queue or {}), 1, -1 do if queue[i] == key then table.remove(queue, i) end end -- not twice
     owner = by
-    return start(entry, key)
+    history = {} -- a line played on its own: Back has nothing to go back to
+    if start(entry, key) then return true end
+    playNext() -- it did not play and start() had already stopped the old line: the lines waiting go on
+    return false
 end
 
 -- Play after whatever is talking now (or right away if nothing is).
@@ -396,18 +502,24 @@ function V.PlayingFor() return handle and (GetTime() - startedTime) or nil end
 -- is this line already waiting its turn?
 function V.Waiting(key)
     for _, k in ipairs(queue or {}) do if k == key then return true end end
+    for _, k in ipairs(paused and paused.keys or {}) do if k == key then return true end end -- kept by a pause
     return false
 end
 
 function V.Enqueue(key)
     if not V.Get(key) then return false end
+    -- already playing or already waiting (a turn-in event twice, a page opened again): once is enough
+    if (handle and playingKey == key) or V.Waiting(key) then return true end
     if paused then -- a recap after a turn-in, a book: after the paused lines
         paused.keys[#paused.keys + 1] = key
+        queueChanged()
         return true
     end
     if handle then
         queue = queue or {}
         queue[#queue + 1] = key
+        ownedBy[key] = nil
+        queueChanged()
         return true
     end
     return V.Play(key)
@@ -443,19 +555,21 @@ function V.OnQuestTurnedIn(questID)
     end)
 end
 
--- Play several lines back to back (chapter recaps).
-function V.PlayQueue(keys, by)
+-- Play several lines back to back (chapter recaps). A new list starts a new history for Back; keep: the same list
+-- goes on (after a pause, a skip while paused, a quest window closing).
+function V.PlayQueue(keys, by, keep)
+    if not keep then history = {} end
     stopSound()
     owner = by
-    queue = {}
-    for _, k in ipairs(keys) do if V.Get(k) then queue[#queue + 1] = k end end
+    queue, ownedBy = {}, {}
+    for _, k in ipairs(keys) do if V.Get(k) then queue[#queue + 1] = k; ownedBy[k] = by end end
     if #queue == 0 then queue = nil; return false end
     playNext()
     return true
 end
 
 function V.PlayingKey() return handle and playingKey or nil end
-function V.LastKey() return playingKey end
+function V.LastKey() return lastKey end
 
 -- ---------------------------------------------------------------- greetings
 -- Which voiced greeting is on screen: each variant ships a short phrase (Data\Lore.lua "greet") that is
@@ -487,12 +601,15 @@ local function isGreeting(key) return key and (key:sub(1, 4) == "gos:" or key:su
 -- "Greetings" is over instead of talking over it. Walking away before then cancels it.
 local GAME_GREETING = 1.5
 local lastGUID, ended, endTime = nil, false, 0
+local waitID = 0 -- the page or greeting asked for last: one still waiting for the game's greeting plays only if it is that
 local function npcGUID()
     local g = UnitGUID("npc") -- nil for quests from items: no game greeting then
     if g and canaccessvalue and not canaccessvalue(g) then return nil end
     return g
 end
 local function afterGameGreeting(fn)
+    waitID = waitID + 1
+    local mine = waitID
     local guid = npcGUID()
     if guid and canaccessvalue and not canaccessvalue(guid) then guid = nil end -- (npcGUID already does; the checker wants it here)
     -- gossip closing into a quest page (same frame) is still the same conversation
@@ -500,6 +617,8 @@ local function afterGameGreeting(fn)
     lastGUID, ended = guid, false
     if not fresh or (ns.GreetingsMuted and ns.GreetingsMuted()) or ns.settings.journalOnly then return fn() end
     C_Timer.After(GAME_GREETING, function()
+        -- clicked on to another page in the meantime: that one has played already, this one is out of date
+        if waitID ~= mine then return end
         local now = npcGUID()
         if now and canaccessvalue and not canaccessvalue(now) then now = nil end
         if now == guid then fn() end
@@ -517,6 +636,7 @@ closeEv:SetScript("OnEvent", function()
             table.remove(queue, i)
         end
     end
+    queueChanged()
 end)
 
 local onGreeting
@@ -536,9 +656,8 @@ function onGreeting(npcID, key, text, female)
         if ns.settings.ttsFallback and text then
             local k = "tts:gos:" .. tostring(npcID)
             local last = ns.char.greeted[k]
-            if not last or time() - last >= (ns.settings.greetCooldown or 10) * 60 then
-                ns.char.greeted[k] = time()
-                V.Speak(text, female)
+            if (not last or time() - last >= (ns.settings.greetCooldown or 10) * 60) and V.Speak(text, female) then
+                ns.char.greeted[k] = time() -- only once it really spoke, else it would be skipped for the cooldown
             end
         end
         return
@@ -554,13 +673,16 @@ function onGreeting(npcID, key, text, female)
     -- a greeting never cuts anyone off: it waits for whoever is talking. Only the newest greeting waits.
     local now = V.PlayingKey()
     if now == key then return end
-    ns.char.greeted[key] = time()
     if text then V.SetText(key, text) end
-    if not now then V.Play(key) return end
+    -- the cooldown starts once the greeting really plays or waits in line, not when it only tried
+    if not now then
+        if V.Play(key) then ns.char.greeted[key] = time() end
+        return
+    end
     if queue then
         for i = #queue, 1, -1 do if isGreeting(queue[i]) then table.remove(queue, i) end end
     end
-    V.Enqueue(key)
+    if V.Enqueue(key) then ns.char.greeted[key] = time() end
 end
 
 -- Called by Capture when a quest dialog page opens. If someone is still talking, the line waits its turn.
@@ -646,14 +768,23 @@ function onQuestPage(questID, kind, text, female)
     end
     if ns.settings.voice and entry then
         local heard = ns.char.heard
+        -- a welcome you've been listening to for a while and then clicked past (thanks tranced93) stops for the quest,
+        -- also when the quest page itself stays quiet (already heard). A quest that opens right after the welcome
+        -- began (an auto-accept addon, a quick click) lets it finish first, then plays: in the background, as before
+        local cutWelcome = handle and playingKey ~= key and isGreeting(playingKey) and GetTime() - startedTime >= 2
+        and ns.settings.questEndsGreeting ~= false
         if handle and playingKey == key then
             -- the same page event fired twice: keep talking, don't restart
-        elseif not (ns.settings.skipHeard and heard[key]) then
+        elseif ns.settings.skipHeard and heard[key] then
+            if cutWelcome then V.Skip() end
+        else
             local now = playingKey and handle and V.Get(playingKey)
             -- nobody is cut off: whoever is talking finishes first, and every page you open waits its turn, in
             -- order (several quests picked up in a row all get their voice; the speaker window's X skips ahead).
             -- A line counts as heard once it has really started (start below), not while it is still waiting.
-            if now and playingKey ~= key then
+            -- except a greeting: opening a quest means you've moved on, so the quest page takes over (long
+            -- welcome speeches kept talking over the quest; thanks tranced93)
+            if now and playingKey ~= key and not cutWelcome then
                 local waiting = false
                 for _, k in ipairs(queue or {}) do if k == key then waiting = true end end
                 if not waiting then V.Enqueue(key) end
@@ -663,9 +794,8 @@ function onQuestPage(questID, kind, text, female)
         end
     elseif ns.settings.voice and ns.settings.ttsFallback and text then
         local heard = ns.char.heard
-        if not (ns.settings.skipHeard and heard["tts:" .. key]) then
+        if not (ns.settings.skipHeard and heard["tts:" .. key]) and V.Speak(text, female) then
             heard["tts:" .. key] = true
-            V.Speak(text, female)
         end
     end
     if not entry and not silenced and ns.PackHint then ns.PackHint(questID) end
@@ -678,7 +808,7 @@ function V.OnQuestClosed()
     if ns.settings.stopOnClose and k and k:sub(1, 1) == "q" then
         local pending = queue
         V.Stop()
-        if pending and #pending > 0 then V.PlayQueue(pending) end
+        if pending and #pending > 0 then V.PlayQueue(pending, nil, true) end
     end
 end
 
@@ -715,6 +845,10 @@ function V.UpdateQuestButton()
         recapBtn.key = rkey
         recapBtn:SetShown(rkey and not tabs and true or false)
         recapBtn:SetText(owner == recapBtn and handle and L["Stop"] or L["Recap"])
+        -- beside Listen on one row, or in its place when the quest has no voice (thanks Azona)
+        recapBtn:ClearAllPoints()
+        if btn:IsShown() then recapBtn:SetPoint("RIGHT", btn, "LEFT", -4, 0)
+        else recapBtn:SetPoint("TOPRIGHT", btn, "TOPRIGHT", 0, 0) end
     end
     if recapTab then
         recapTab.key = rkey
@@ -730,14 +864,21 @@ function V.UpdateQuestButton()
     if new then
         -- next to the Listen button, or where it would be; never behind the portrait on the left
         marker:ClearAllPoints()
-        if has and not tabs then marker:SetPoint("RIGHT", btn, "LEFT", -8, 0)
+        if has and not tabs and recapBtn and recapBtn:IsShown() then marker:SetPoint("TOPRIGHT", btn, "BOTTOMRIGHT", 0, -4)
+        elseif has and not tabs then marker:SetPoint("RIGHT", btn, "LEFT", -8, 0)
         else marker:SetPoint("RIGHT", QuestFrame, "TOPRIGHT", -30, -40) end
         marker:SetText(has and L["New in WoW: Forever"] or L["New in WoW: Forever  |cff9d9d9d· voice coming soon|r"])
     end
 end
 
-table.insert(ns.onLogin, function()
-    if ns.db.playing then StopSound(ns.db.playing, 400); ns.db.playing = nil end
+-- The saved handle is for a /reload, where the line keeps playing and is stopped here. After a real login (or a crash)
+-- the same number belongs to some other sound, which must not be stopped.
+local entering = CreateFrame("Frame")
+entering:RegisterEvent("PLAYER_ENTERING_WORLD")
+entering:SetScript("OnEvent", function(self, _, isInitialLogin)
+    self:UnregisterAllEvents()
+    if ns.db.playing and not isInitialLogin then StopSound(ns.db.playing, 400) end
+    ns.db.playing = nil
 end)
 
 table.insert(ns.onLogin, function()
@@ -785,7 +926,7 @@ table.insert(ns.onLogin, function()
     btn:Hide()
     recapBtn = CreateFrame("Button", nil, layer, "UIPanelButtonTemplate")
     recapBtn:SetSize(70, 20); ns.FitButton(recapBtn)
-    recapBtn:SetPoint("TOP", btn, "BOTTOM", 0, -4)
+    recapBtn:SetPoint("RIGHT", btn, "LEFT", -4, 0)
     recapBtn:SetScript("OnClick", function(self)
         if owner == self and handle then V.Stop() elseif self.key then V.Play(self.key, self) end
         V.UpdateQuestButton()

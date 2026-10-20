@@ -111,7 +111,7 @@ queueWatch:SetScript("OnUpdate", function(_, dt)
 end)
 
 ev:SetScript("OnEvent", function(_, event, text, speaker, _, _, target, _, _, _, _, _, _, guid)
-    if not (ns.db and ns.settings.worldSpeech) then return end
+    if not (ns.db and ns.settings.worldSpeech) or ns.InCutscene() then return end
     text, speaker = ns.clean(text), ns.clean(speaker)
     if type(text) ~= "string" or type(speaker) ~= "string" or text == "" then return end
     local key = S.Key(speaker, text)

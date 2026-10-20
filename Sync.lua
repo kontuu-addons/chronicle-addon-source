@@ -12,6 +12,9 @@ local PREFIX = "CHRONICLE"
 local CHUNK = 230         -- bytes of payload per message (addon messages are limited to 255)
 local SEND_EVERY = 1.1    -- seconds between messages: stays under the server's addon message throttle
 local MAX_CHUNKS = 60     -- one transfer is at most ~14 KB; the rest goes with the next party
+-- the records' budget leaves room for the table around them (version, client, the four lists), or the transfer comes
+-- to more than MAX_CHUNKS pieces and every receiver drops it
+local BUDGET = CHUNK * MAX_CHUNKS - 256
 local RESEND_AFTER = 600  -- seconds before the same party gets our recordings again
 local STALE = 120         -- seconds before a half-received transfer is dropped
 local LIMIT = { quests = 1000, greetings = 400, books = 100, speech = 200 }
@@ -169,7 +172,6 @@ end
 Y.Merge = merge
 
 -- ---------------------------------------------------------------- sending
-local lastSent = {}
 local sending = false
 
 local function sendResult(ok)
@@ -194,10 +196,14 @@ local function send()
     if sending or not homeParty() or not ns.english then return end
     if not (ns.settings.partySync and ns.Share) then return end
     local who = partyKey()
-    if lastSent[who] and time() - lastSent[who] < RESEND_AFTER then return end
-    local text, n = ns.Share.Build({ sync = true, maxBytes = CHUNK * MAX_CHUNKS })
+    -- kept in the saved data: a /reload or a new login must not send the same recordings to the same party again
+    local sent = ns.db.syncSent or {}
+    ns.db.syncSent = sent
+    for k, t in pairs(sent) do if time() - t >= RESEND_AFTER then sent[k] = nil end end
+    if sent[who] then return end
+    local text, n = ns.Share.Build({ sync = true, maxBytes = BUDGET })
     if n == 0 then return end
-    lastSent[who] = time()
+    sent[who] = time()
 
     local body = text:gsub("^CHRONICLE%-SHARE%-1\n", "")
     local id = tostring(math.random(100000, 999999))

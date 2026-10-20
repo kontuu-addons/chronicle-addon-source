@@ -159,6 +159,9 @@ end
 function J.ArcForMe(arc)
     local classBit = 2 ^ ((select(3, UnitClass("player")) or 1) - 1)
     if arc.cls and bit.band(arc.cls, classBit) == 0 then return false end
+    -- the other faction's chapter (the Horde's Hallow's End was announced to a human)
+    local side = (UnitFactionGroup("player") or ""):sub(1, 1)
+    if arc.side and side ~= "" and arc.side ~= side then return false end
     if arc.event and not (ns.Holiday and ns.Holiday.IsOn(arc.event)) then return false end
     if arc.prof and not myProfessions()[arc.prof] then return false end
     return J.ArcForMyRace(arc)
@@ -250,7 +253,10 @@ function J.BuildChapters(withLocked)
         if used[id] then return end
         used[id] = true
         local q = ns.db.quests[id] or {}
-        local zone = q.zone or ns.LoreZone(id) or q.category or fallbackZone or L["Unknown lands"]
+        -- a new dungeon quest goes with its dungeon, wherever it was picked up (thanks Alche)
+        local l = ns.Lore
+        local di = l and l.dungeonOf and l.dungeonOf[id]
+        local zone = (di and l.zoneNames[di]) or q.zone or ns.LoreZone(id) or q.category or fallbackZone or L["Unknown lands"]
         local ch = byZone[zone]
         if not ch then
             ch = { key = "zone:" .. zone, title = L["Other tales"], zone = zone, entries = {}, order = BIG }
@@ -893,6 +899,7 @@ local function renderChapter(ch)
     local voices = not ns.settings.journalOnly
     header.recap:SetShown(voices); header.rule:Show()
     header.recap.keys, header.recap.label = recapKeys(ch), nil
+    header.recap.tell, header.recap.libraryToggle = nil, nil -- the Chronicle and Library pages give it other jobs
     header.recap:SetWidth(100)
     header.zone.keys = zoneStoryKeys(ch.zone)
     header.zone:SetShown(voices and #header.zone.keys > 1)
@@ -1230,6 +1237,27 @@ local function renderZone(zone)
             y = y - 10
         end
     end
+    -- places in the zone this character has walked into: the narrator's line again (Areas.lua; thanks Lukey_Q)
+    local prefix = "area:" .. zone .. ":"
+    local seen, total = {}, 0
+    for key in pairs(ns.audio or {}) do
+        if type(key) == "string" and key:sub(1, #prefix) == prefix and not key:find(":", #prefix + 1, true) then
+            total = total + 1
+            if ns.char.areaSeen and ns.char.areaSeen[key] then seen[#seen + 1] = key end
+        end
+    end
+    if #seen > 0 then
+        table.sort(seen)
+        local items = {}
+        for _, key in ipairs(seen) do
+            items[#items + 1] = { title = key:sub(#prefix + 1), from = L["Click to hear it"], keys = { key },
+                icon = "Interface\\Icons\\INV_Misc_Map_01" }
+        end
+        y, n = placeTodos({ ns.settings.hideUnfound and ("%s  (%d)"):format(L["Places"], #seen)
+            or ("%s  (%d/%d)"):format(L["Places"], #seen, total) }, y, n, pw)
+        y, n = placeTodos(items, y, n, pw)
+        y = y - 10
+    end
 
     page:SetHeight(-y + 20)
 end
@@ -1388,6 +1416,13 @@ local function dungeons()
                     d.total = d.total + #a.quests
                 end
             end
+        end
+        -- its new quests that no chapter covers yet ("Other tales" under the dungeon's name)
+        local loose = byKey["zone:" .. name]
+        if loose then
+            d.chapters[#d.chapters + 1] = loose
+            d.done = d.done + (loose.done or 0)
+            d.total = d.total + (loose.total or #loose.entries)
         end
         for _, a in ipairs(lo.arcs or {}) do -- its levels: those of its quests
             if a.zone == name then
@@ -2622,7 +2657,7 @@ function J.SetTab(which, keepSelection)
     local shown = p and p.host and p.embed(p.host)
     if p and not shown then
         -- nothing to share, or no page to show here: the old ways
-        if which == "options" and ns.Options.Open() then frame:Hide() end
+        if which == "options" and ns.Options.OpenSettings() then frame:Hide() end
         return
     end
     for name, q in pairs(all) do
@@ -2747,7 +2782,7 @@ local function create()
         frame:HookScript("OnHide", function() PlaySound(SOUNDKIT.IG_CHARACTER_INFO_CLOSE) end)
     end
 
-    local openOptions = function() if ns.Options.Open() then frame:Hide() end end -- the settings window opens behind ours
+    local openOptions = function() if ns.Options.OpenSettings() then frame:Hide() end end -- the settings window opens behind ours
     if styled then
         -- side tabs: the two pages, then a gap, then options and sharing
         frame.tabStory = sideTab(frame, "Interface\\Icons\\INV_Scroll_03", L["The Story"], function() J.SetTab("story") end)
@@ -3044,6 +3079,20 @@ function J.Toggle()
         if tab == "story" then selected = chapterHere() or selected end
         J.Refresh()
     end
+end
+
+-- the Options tab of the journal in the new style (false: the client lacks its look, the options stay in the game's
+-- settings window)
+function J.HasOptionsTab()
+    if not frame then create() end
+    return frame.optionsHost ~= nil and ns.Options.page ~= nil
+end
+
+function J.ShowOptions()
+    if not J.HasOptionsTab() then return false end
+    frame:Show()
+    J.SetTab("options")
+    return frame.optionsHost:IsShown()
 end
 
 -- /lore share and the share nudge: the Share tab of the journal in the new style (false: use the old window)

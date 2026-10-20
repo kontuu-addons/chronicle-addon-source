@@ -92,13 +92,22 @@ local function benefitText(a)
     return table.concat(out, "\n")
 end
 
--- the tale for this zone: its voice key when voiced, and its text (shown in the window until the voice exists)
+-- the tale for this zone: its voice key when voiced, and its text (shown in the window until the voice exists).
+-- A zone with more tales (Lore "campfireMore": tale:<zone>:2, :3) tells them in turn, the next one each sitting;
+-- tales not voiced yet wait until they are
 local function taleKey()
     local zone = ns.zoneEN(ns.clean(GetRealZoneText()))
     local text = zone and ns.Lore and ns.Lore.campfire and ns.Lore.campfire[zone]
     if not text then return nil, zone end
-    local key = "tale:" .. zone
-    return key, zone, ns.Voice.Get(key) ~= nil, text
+    local tales = { { "tale:" .. zone, text } }
+    local more = ns.Lore.campfireMore and ns.Lore.campfireMore[zone]
+    for i, t in ipairs(type(more) == "table" and more or {}) do
+        local k = "tale:" .. zone .. ":" .. (i + 1)
+        if ns.Voice.Get(k) then tales[#tales + 1] = { k, t } end
+    end
+    local turn = ns.char.taleTurn and ns.char.taleTurn[zone] or 0
+    local pick = tales[turn % #tales + 1]
+    return pick[1], zone, ns.Voice.Get(pick[1]) ~= nil, pick[2]
 end
 
 -- Chronicle hiding the window itself (not you closing it)
@@ -141,6 +150,8 @@ local function create()
         if not key then return end
         ns.char.tales = ns.char.tales or {}
         ns.char.tales[zone] = time()
+        ns.char.taleTurn = ns.char.taleTurn or {}
+        ns.char.taleTurn[zone] = (ns.char.taleTurn[zone] or 0) + 1 -- the next sitting tells the next tale
         if voiced then ns.Voice.Play(key, b); return end
         -- not voiced yet: read it in the window
         f.reading = true

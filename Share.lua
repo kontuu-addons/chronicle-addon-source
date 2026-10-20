@@ -78,7 +78,7 @@ function S.Build(opts)
     local n, budget = 0, opts.maxBytes or math.huge
     local function take(bucket, key, e)
         if opts.sync and e.fromParty then return end
-        local b = size(e)
+        local b = size(e) + size(key) + 4 -- with the [key]= and , around it
         if b > budget then return end
         budget = budget - b
         bucket[key] = e

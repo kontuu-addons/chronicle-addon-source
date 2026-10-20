@@ -26,7 +26,7 @@ local function onArea()
 end
 
 local ev = CreateFrame("Frame")
-ev:SetScript("OnEvent", function() C_Timer.After(1.5, onArea) end)
+ev:SetScript("OnEvent", function() C_Timer.After(1.5, function() ns.AfterCutscene(onArea) end) end)
 table.insert(ns.onLogin, function()
     ev:RegisterEvent("ZONE_CHANGED")
     ev:RegisterEvent("ZONE_CHANGED_INDOORS")

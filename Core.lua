@@ -9,14 +9,16 @@ ns.onLogin = {}
 BINDING_HEADER_CHRONICLE = "Chronicle"
 BINDING_NAME_CHRONICLE_PLAYSTOP = L["Play, pause or resume the voice"]
 BINDING_NAME_CHRONICLE_SKIP = L["Skip to the next line"]
+BINDING_NAME_CHRONICLE_BACK = L["Back to the line before"]
 BINDING_NAME_CHRONICLE_JOURNAL = L["Open the journal"]
 _G.ChronicleBinding_PlayStop = function()
     local V = ns.Voice
     if not V then return end
     if V.Paused() then V.Resume() return end
     if V.IsPlaying() then V.Pause() return end
-    local key = V.LastKey() or ns.lastKey -- the last line heard, or the quest window's line
-    if key then V.Play(key) end
+    -- the last line heard again (the lines waiting and Back stay, as with the speaker window's replay), or the quest
+    -- window's line
+    if V.LastKey() then V.Restart() elseif ns.lastKey then V.Play(ns.lastKey) end
 end
 -- Playing with a controller: its back button is Escape, so Chronicle's small windows close with it then. Only while a
 -- gamepad is on: with mouse and keyboard, Escape goes straight to the game menu as before.
@@ -51,6 +53,8 @@ _G.ChronicleBinding_Skip = function()
     elseif ns.Voice and ns.Voice.IsPlaying() then ns.Voice.Skip()
     elseif ns.TalkingHead then ns.TalkingHead.Hide(true) end
 end
+-- Back: the line before in the list that is playing (the speaker window's back button)
+_G.ChronicleBinding_Back = function() if ns.Voice then ns.Voice.Prev() end end
 _G.ChronicleBinding_Journal = function() if ns.Journal then ns.Journal.Toggle() end end
 
 -- The minimap's addon compartment (the TOC names these): left-click the journal, right-click the options.
@@ -82,6 +86,8 @@ local DEFAULTS = {
     stopOnClose = false, -- keep talking after the quest window closes (works with auto-accept addons)
     speaker = true,      -- show the "now speaking" bar
     lockSpeaker = false, -- the speaker window can't be dragged
+    speakerStays = false, -- the speaker window stays up after the last line until it is closed
+    speakerPlayer = true, -- the speaker window's player row (back, stop, next, replay); off: play/stop and replay by the X
     speakerBg = 1,       -- how strong the speaker window's background is (0 = only the words)
     recapAfterTurnIn = true, -- narrator reads the story recap after you hand in a quest
     minimap = true,      -- minimap button
@@ -91,7 +97,8 @@ local DEFAULTS = {
     areaIntros = true,   -- a line about a named place in a zone (Bloodhoof Village) the first time you enter it
     skipHeard = true,    -- don't auto-play a line this character has already heard
     greetings = true,    -- voice NPC greetings (gossip window / quest greeting)
-    greetCooldown = 10,  -- minutes before the same greeting plays again (0 = every time)
+    greetCooldown = 10,
+    questEndsGreeting = true, -- taking a quest stops a welcome you have been listening to (not one that just began)  -- minutes before the same greeting plays again (0 = every time)
     ttsFallback = false, -- read lines nobody has voiced yet with the game's built-in text-to-speech
     newMarker = true,    -- "New in WoW: Forever" on the quest window
     books = true,        -- the narrator reads books, letters and plaques
@@ -130,6 +137,29 @@ function ns.IsNew(id)
 end
 
 -- Zone of a quest according to the shipped lore data (covers every classic quest, even ones never recorded).
+-- The game's own intro (a new character's opening cinematic) or a movie: Chronicle doesn't talk over it
+-- (thanks Guillimus)
+function ns.InCutscene()
+    return (InCinematic and InCinematic()) or (CinematicFrame and CinematicFrame:IsShown())
+        or (MovieFrame and MovieFrame:IsShown()) or false
+end
+
+-- run fn now, or a little after the cutscene on screen has ended
+local afterCut = {}
+local cutWatch = CreateFrame("Frame")
+for _, e in ipairs({ "CINEMATIC_STOP", "STOP_MOVIE" }) do pcall(cutWatch.RegisterEvent, cutWatch, e) end
+cutWatch:SetScript("OnEvent", function()
+    C_Timer.After(2, function()
+        if ns.InCutscene() then return end
+        local todo = afterCut
+        afterCut = {}
+        for _, fn in ipairs(todo) do pcall(fn) end
+    end)
+end)
+function ns.AfterCutscene(fn)
+    if ns.InCutscene() then afterCut[#afterCut + 1] = fn else fn() end
+end
+
 function ns.LoreZone(id)
     local l = ns.Lore
     local i = l and l.zoneOf and l.zoneOf[id]
@@ -286,6 +316,31 @@ ev:SetScript("OnEvent", function(_, event, arg)
         c.active = c.active or {}     -- [questID] = accepted time
         c.heard = c.heard or {}       -- [voice key] = true, lines already played automatically
         c.greeted = c.greeted or {}   -- [greeting key] = time it last played (for the greeting cooldown)
+        -- zones saved in the client's language ("Wald von Elwynn") showed up twice after a language change;
+        -- quests with a map ID tell which English zone each such name means
+        -- a name is only merged when every quest saved under it points to the same English zone (one quest taken
+        -- right after a teleport must not move a whole zone)
+        local alias, mixed = {}, {}
+        for _, q in pairs(db.quests) do
+            local en = ns.zoneOfMap(q.map)
+            if en and q.zone and not ns.zoneKnown(q.zone) then
+                if alias[q.zone] and alias[q.zone] ~= en then mixed[q.zone] = true end
+                alias[q.zone] = en
+            end
+        end
+        for name in pairs(mixed) do alias[name] = nil end
+        for _, q in pairs(db.quests) do q.zone = alias[q.zone] or q.zone end
+        if next(alias) then
+            for _, e in ipairs(c.journal) do e.zone = alias[e.zone] or e.zone end
+            for _, t in ipairs({ db.greetings or {}, db.offers or {} }) do
+                for _, g in pairs(t) do g.zone = alias[g.zone] or g.zone end
+            end
+            for _, t in ipairs({ c.zoneSeen or {}, c.tales or {}, c.epilogues or {} }) do
+                for name, en in pairs(alias) do
+                    if t[name] then t[en] = math.max(t[en] or 0, t[name]); t[name] = nil end
+                end
+            end
+        end
 
         ns.db, ns.char, ns.settings = db, c, db.settings
     elseif event == "PLAYER_LOGIN" then
@@ -413,8 +468,9 @@ end
 -- The game's own NPC greeting and farewell voices (Data\Greetings.lua) would talk over Chronicle's lines.
 local greetingsMuted = false
 function ns.ApplyGreetingMute()
-    -- only while Chronicle voices greetings itself: with its greetings off, the game's own clips come back
-    local want = ns.settings.muteGameGreetings and ns.settings.greetings and not ns.settings.journalOnly
+    -- its own option, whether or not Chronicle voices greetings itself (with both off: no greetings at all; thanks
+    -- Riskie); with Journal only (no voices), the game's own clips come back
+    local want = ns.settings.muteGameGreetings and not ns.settings.journalOnly
     if want == greetingsMuted or not (MuteSoundFile and UnmuteSoundFile and ns.GreetingSounds) then return end
     local fn = want and MuteSoundFile or UnmuteSoundFile
     for _, fid in ipairs(ns.GreetingSounds) do pcall(fn, fid) end
