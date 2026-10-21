@@ -250,7 +250,9 @@ function S.Unvoiced()
     if not ns.english then return 0 end
     local n = 0
     for id, q in pairs(ns.db.quests) do
+        -- the same pages Build sends (detail, progress and complete), or the reminder counts something else
         if not q.fromParty and ns.IsNew(id) and ((q.detail and not ns.Voice.Get("q" .. id .. ":detail"))
+            or (q.progress and not ns.Voice.Get("q" .. id .. ":progress"))
             or (q.complete and not ns.Voice.Get("q" .. id .. ":complete"))) then
             n = n + 1
         end
