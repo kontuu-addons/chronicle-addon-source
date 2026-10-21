@@ -242,18 +242,11 @@ L["Open the journal"] = "Abrir el diario"
 
 -- campfire
 L["By the fire"] = "Junto al fuego"
-L["Tell me a story"] = "Cuéntame una historia"
-L["Not now"] = "Ahora no"
-L["The camp's benefits in %d s"] = "Los beneficios del campamento en %d s"
-L["Camp benefits"] = "Beneficios del campamento"
 L["By the fire: %s"] = "Junto al fuego: %s"
-L["When you sit by a camp fire, a small window counts down the minute until the camp's benefits, offers a campfire tale about the zone while you wait, and then shows what the camp gave you."] = "Al sentarte junto a una hoguera, una pequeña ventana cuenta el minuto hasta los beneficios del campamento, ofrece un relato de la zona mientras esperas y luego muestra lo que te dio el campamento."
-L["Active now (%d min left):"] = "Activo (quedan %d min):"
-L["Tent rest: again in %d min"] = "Descanso de la tienda: de nuevo en %d min"
+L["Campfire tale"] = "Relato de la hoguera"
+L["Near a camp fire, a short note says when the zone has a tale you haven't heard. Sit down, and the narrator tells the next one."] = "Cerca de una hoguera aparece un breve aviso si la zona tiene un relato que aún no conoces. Siéntate y el narrador cuenta el siguiente."
 L["A campfire nearby"] = "Una hoguera cerca"
 L["Sit down for a while, and hear a tale of %s."] = "Siéntate un rato y escucha un relato de %s."
-L["At this camp:"] = "En este campamento:"
-L["Hover over the camp objects to see them here."] = "Pasa el ratón sobre los objetos del campamento para verlos aquí."
 
 -- tips and subtitle size
 L["Did you know?"] = "¿Sabías que...?"
