@@ -65,11 +65,11 @@ local function about(key)
         return ok and t or nil
     end
     if kind == "gos" or kind == "qg" then
-        return "Greeting"
+        return L["Greeting"]
     elseif kind == "bio" then
-        return "Who's who"
+        return L["Who's who"]
     elseif kind == "book" or kind == "bookr" then
-        return "Reading"
+        return L["Reading"]
     elseif kind == "react" then
         return ""
     elseif kind == "area" then
