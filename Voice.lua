@@ -320,7 +320,6 @@ local startedTime = 0
 local function start(entry, key)
     paused = nil -- something new is talking: the paused line is let go
     stopSound()
-    playingKey = key
     startedTime = GetTime()
     holdBackground()
     holdDuck()
@@ -342,6 +341,7 @@ local function start(entry, key)
         return false
     end
     handle = h
+    playingKey = key -- only a line that really plays: Replay and Back work on it
     -- heard once it really plays: a file that failed would otherwise be skipped as "already heard" from then on
     if ns.char and ns.char.heard and key and (key:match("^q%d") or key:sub(1, 4) == "book") then ns.char.heard[key] = true end
     lastKey = key or lastKey -- only a line that really plays: Replay, Play/Stop and /lore report use it
@@ -415,6 +415,7 @@ function V.HasPrev() return lineBefore() ~= nil end
 function V.Prev()
     local back, i = lineBefore()
     if not back then return false end
+    ownedBy[playingKey] = owner -- this line waits again with the button that started it
     local rest = { playingKey, unpack(waitingLines()) }
     for j = #history, i, -1 do history[j] = nil end -- both leave the history; start() adds the line before again
     return playNow(back, rest)
