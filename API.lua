@@ -48,7 +48,10 @@ local function allowed(key)
         return ns.Endings and ns.Endings.HasEpilogue(zone) and ns.Endings.EpilogueKey(zone) == epi or false
     end
     local dungeon, boss = key:match("^dend:(.+)|(.+)$")
-    if dungeon then return ns.db.lastBoss and ns.db.lastBoss[dungeon] == boss or false end
+    if dungeon then -- the wing's ending is earned once this character has finished that wing (as the journal does)
+        local ends = ns.Lore and ns.Lore.dungeonEnd and ns.Lore.dungeonEnd[dungeon]
+        return (ends and ends[boss] ~= nil and (ns.char.dungeonsDone or {})[dungeon] ~= nil) or false
+    end
     return true -- greetings, books, zone welcomes, dungeon welcomes, campfire tales: nothing to spoil
 end
 
@@ -130,12 +133,15 @@ function api:ZoneStoryKeys(zone)
     return filter(ns.Journal.ZoneStoryKeys(zone))
 end
 
---- A dungeon's welcome, and its ending once this account has beaten its last boss.
+--- A dungeon's welcome, and the endings of its wings this character has finished.
 function api:DungeonKeys(dungeon)
     if type(dungeon) ~= "string" then return {} end
     local keys = { "dng:" .. dungeon }
-    local boss = ns.db.lastBoss and ns.db.lastBoss[dungeon]
-    if boss then keys[#keys + 1] = "dend:" .. dungeon .. "|" .. boss end
+    for wing, bosses in pairs((ns.Lore and ns.Lore.dungeonEnd) or {}) do
+        if (wing == dungeon or wing:sub(1, #dungeon + 2) == dungeon .. ": ") and (ns.char.dungeonsDone or {})[wing] then
+            for boss in pairs(bosses) do keys[#keys + 1] = "dend:" .. wing .. "|" .. boss end
+        end
+    end
     return filter(keys)
 end
 

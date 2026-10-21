@@ -715,8 +715,11 @@ end)
 local pendingRefresh
 local qev = CreateFrame("Frame")
 for _, e in ipairs({ "QUEST_ACCEPTED", "QUEST_TURNED_IN", "QUEST_LOG_UPDATE", "PLAYER_LEVEL_UP" }) do pcall(qev.RegisterEvent, qev, e) end
-qev:SetScript("OnEvent", function()
-    if pendingRefresh or not (ns.settings and ns.settings.questMarkers) then return end
+qev:SetScript("OnEvent", function(_, event)
+    if pendingRefresh or not ns.settings then return end
+    -- the story panel and pins change when a quest is taken, handed in or a level is reached; objective progress
+    -- (QUEST_LOG_UPDATE, every kill) only matters to the markers, and a refresh would close a pin's tooltip each time
+    if event == "QUEST_LOG_UPDATE" and not ns.settings.questMarkers then return end
     pendingRefresh = true
     C_Timer.After(1, function()
         pendingRefresh = false

@@ -211,6 +211,8 @@ function R.ShowFlight(zone)
     return true
 end
 
+local ev -- created below; onZone waits for the end of a fight on it
+
 local function onZone()
     local zone = GetRealZoneText and ns.zoneEN(ns.clean(GetRealZoneText()))
     if not zone or zone == "" or not ns.char then return end
@@ -223,18 +225,23 @@ local function onZone()
         return
     end
     announced = {} -- leaving resets, so the next run gets the offer again
+    -- not in combat: mark the zone as seen only when the welcome could really show, else it is lost for good
+    if InCombatLockdown() then ev:RegisterEvent("PLAYER_REGEN_ENABLED") return end
     ns.char.zoneSeen = ns.char.zoneSeen or {}
     local last = ns.char.zoneSeen[zone]
     ns.char.zoneSeen[zone] = time()
-    if not last and ns.settings.zoneIntro and not InCombatLockdown() then
+    if not last and ns.settings.zoneIntro then
         R.ShowWelcome(zone)
-    elseif ns.settings.zoneRecap and last and time() - last > AWAY and not InCombatLockdown() then
+    elseif ns.settings.zoneRecap and last and time() - last > AWAY then
         R.Show(zone)
     end
 end
 
-local ev = CreateFrame("Frame")
-ev:SetScript("OnEvent", function() C_Timer.After(2, onZone) end)
+ev = CreateFrame("Frame")
+ev:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_REGEN_ENABLED" then self:UnregisterEvent(event) end -- the fight is over: look at the zone again
+    C_Timer.After(2, onZone)
+end)
 table.insert(ns.onLogin, function()
     ev:RegisterEvent("ZONE_CHANGED_NEW_AREA")
     C_Timer.After(6, onZone) -- logging back in after a break counts as returning too
@@ -243,5 +250,6 @@ end)
 -- keep "last seen" fresh while you stay in a zone, so a long session there is not "away"
 C_Timer.NewTicker(300, function()
     local zone = GetRealZoneText and ns.zoneEN(ns.clean(GetRealZoneText()))
-    if zone and zone ~= "" and ns.char and ns.char.zoneSeen then ns.char.zoneSeen[zone] = time() end
+    -- only a zone already seen: a new one must still get its welcome
+    if zone and zone ~= "" and ns.char and ns.char.zoneSeen and ns.char.zoneSeen[zone] then ns.char.zoneSeen[zone] = time() end
 end)
