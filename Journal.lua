@@ -1140,10 +1140,15 @@ local function renderZone(zone)
     local story = ns.Endings and ns.Endings.HasEpilogue(zone)
     header.sub:SetText(story and L["You have seen this story through"] or levels)
     header.intro:SetWidth(width)
-    -- the campfire tale, once heard by a fire here (click: hear it again)
-    local tale = ns.char.tales and ns.char.tales[zone] and ns.Voice.Get("tale:" .. zone)
-        and { L["By the fire"], { title = L["Campfire tale"], from = L["Click to hear it"], keys = { "tale:" .. zone },
-            icon = "Interface\\Icons\\Spell_Fire_Fire" } }
+    -- the campfire tales heard by a fire here (click: hear one again)
+    local tale
+    for i, key in ipairs(ns.Campfire and ns.Campfire.Tales(zone) or {}) do
+        if ns.char.tales and ns.char.tales[key:sub(6)] and ns.Voice.Get(key) then
+            tale = tale or { L["By the fire"] }
+            tale[#tale + 1] = { title = i > 1 and ("%s %d"):format(L["Campfire tale"], i) or L["Campfire tale"],
+                from = L["Click to hear it"], keys = { key }, icon = "Interface\\Icons\\Spell_Fire_Fire" }
+        end
+    end
     if #done + #going + #hidden == 0 then
         header.intro:SetText(L["No chapters known here yet."])
         local y = tale and placeTodos(tale, -(54 + header.intro:GetStringHeight() + 16), 1, pw)

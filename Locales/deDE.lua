@@ -243,7 +243,7 @@ L["Open the journal"] = "Tagebuch öffnen"
 L["By the fire"] = "Am Feuer"
 L["By the fire: %s"] = "Am Feuer: %s"
 L["Campfire tale"] = "Lagerfeuergeschichte"
-L["Near a camp fire, a short note says when the zone has a tale you haven't heard. Sit down, and the narrator tells it, once per character."] = "In der Nähe eines Lagerfeuers erscheint ein kurzer Hinweis, wenn das Gebiet eine Geschichte hat, die du noch nicht kennst. Setz dich, und der Erzähler erzählt sie, einmal pro Charakter."
+L["Near a camp fire, a short note says when the zone has a tale you haven't heard. Sit down, and the narrator tells the next one."] = "In der Nähe eines Lagerfeuers erscheint ein kurzer Hinweis, wenn das Gebiet eine Geschichte hat, die du noch nicht kennst. Setz dich, und der Erzähler erzählt die nächste."
 L["A campfire nearby"] = "Ein Lagerfeuer in der Nähe"
 L["Sit down for a while, and hear a tale of %s."] = "Setz dich eine Weile und hör eine Geschichte aus %s."
 

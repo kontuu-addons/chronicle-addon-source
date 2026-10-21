@@ -1,6 +1,7 @@
--- Chronicle / Campfire: sit down by a camp fire (WoW: Forever's camping) and the narrator tells the zone's campfire
--- tale in the speaker window, once per character. Near a fire whose zone has a tale you haven't heard, a short note
--- says so and the minimap book glows. The countdown and the camp's benefits are the game's own buffs.
+-- Chronicle / Campfire: sit down by a camp fire (WoW: Forever's camping) and the narrator tells one of the zone's
+-- campfire tales in the speaker window, the next one you haven't heard each time. Near a fire whose zone has a tale
+-- you haven't heard, a short note says so and the minimap book glows. The countdown and the camp's benefits are the
+-- game's own buffs.
 local _, ns = ...
 local L = ns.L
 local C = {}
@@ -27,12 +28,20 @@ end
 local function sitting() return has(SITTING, "Welcoming Campfire") end
 local function nearby() return has(NEARBY, "Campfire Nearby") end
 
--- the tale of the zone you're in, when there is one this character hasn't heard yet
+-- a zone's tales in the order they are told: the Lore's campfire tale, then campfireMore (tale:<zone>:2, :3)
+function C.Tales(zone)
+    local more = ns.Lore and ns.Lore.campfireMore and ns.Lore.campfireMore[zone]
+    local keys = { "tale:" .. zone }
+    for i = 2, 1 + (type(more) == "table" and #more or 0) do keys[i] = "tale:" .. zone .. ":" .. i end
+    return keys
+end
+
+-- the next tale of the zone you're in that this character hasn't heard yet; one without a voice yet waits for it
 local function unheardTale()
     local zone = ns.zoneEN(ns.clean(GetRealZoneText()))
-    local key = zone and "tale:" .. zone
-    if not key or (ns.char.tales and ns.char.tales[zone]) or not ns.Voice.Get(key) then return nil end
-    return key, zone
+    for _, key in ipairs(zone and C.Tales(zone) or {}) do
+        if not (ns.char.tales and ns.char.tales[key:sub(6)]) and ns.Voice.Get(key) then return key, zone end
+    end
 end
 
 local seated, pending, near, hint, hintAgain
