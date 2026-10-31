@@ -37,6 +37,8 @@ local function allowed(key)
     if qid then return onQuest(qid) or completed(qid) end
     local sum = tonumber(key:match("^sum:(%d+)$"))
     if sum then return completed(sum) end
+    local rare = tonumber(key:match("^rare:(%d+)$"))
+    if rare then return ((ns.char and ns.char.rares) or {})[rare] ~= nil end -- a famous rare's story, once slain
     local arc = key:match("^arc:(.+)$")
     if arc then
         for _, k in ipairs(ns.Journal.ZoneStoryKeys(arcZone(arc) or "")) do if k == key then return true end end
@@ -48,8 +50,11 @@ local function allowed(key)
         return ns.Endings and ns.Endings.HasEpilogue(zone) and ns.Endings.EpilogueKey(zone) == epi or false
     end
     local dungeon, boss = key:match("^dend:(.+)|(.+)$")
-    if dungeon then return ns.db.lastBoss and ns.db.lastBoss[dungeon] == boss or false end
-    return true -- greetings, books, zone welcomes, dungeon welcomes, campfire tales: nothing to spoil
+    if dungeon then -- the wing's ending is earned once this character has finished that wing (as the journal does)
+        local ends = ns.Lore and ns.Lore.dungeonEnd and ns.Lore.dungeonEnd[dungeon]
+        return (ends and ends[boss] ~= nil and (ns.char.dungeonsDone or {})[dungeon] ~= nil) or false
+    end
+    return true -- greetings, books, zone welcomes, dungeon welcomes, campfire tales, legends: nothing to spoil
 end
 
 local function filter(keys)
@@ -134,8 +139,11 @@ end
 function api:DungeonKeys(dungeon)
     if type(dungeon) ~= "string" then return {} end
     local keys = { "dng:" .. dungeon }
-    local boss = ns.db.lastBoss and ns.db.lastBoss[dungeon]
-    if boss then keys[#keys + 1] = "dend:" .. dungeon .. "|" .. boss end
+    for wing, bosses in pairs((ns.Lore and ns.Lore.dungeonEnd) or {}) do
+        if (wing == dungeon or wing:sub(1, #dungeon + 2) == dungeon .. ": ") and (ns.char.dungeonsDone or {})[wing] then
+            for boss in pairs(bosses) do keys[#keys + 1] = "dend:" .. wing .. "|" .. boss end
+        end
+    end
     return filter(keys)
 end
 

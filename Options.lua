@@ -14,8 +14,9 @@ local function volCvar() local _, ch = ns.Voice.Channel() return ch.vol end
 -- ("blocked action", the game hangs). Here the window has nothing of ours to save; each box saves itself when clicked.
 local GREYED = { -- off while "Journal only" is on
     voice = true, recapAfterTurnIn = true, greetings = true, books = true, worldSpeech = true, ghostQuips = true,
-    reactions = true, speaker = true, subtitles = true, bigSubtitles = true, skipHeard = true, stopOnClose = true,
+    fishingLines = true, rareLines = true, reactions = true, speaker = true, subtitles = true, bigSubtitles = true, skipHeard = true, stopOnClose = true,
     muteGameGreetings = true, ttsFallback = true, checkVoices = true, speakerPlayer = true, questEndsGreeting = true,
+    campfire = true,
 }
 local ON_CHANGE = {
     minimap = function() ns.Minimap.Update() end,
@@ -35,6 +36,7 @@ local ON_CHANGE = {
 local MORE = {
     bgVoices = true,
     questEndsGreeting = true, ["Greet me again after"] = true, mixedSure = true, ghostQuips = true, reactions = true,
+    fishingLines = true, rareLines = true,
     lockSpeaker = true, bigSubtitles = true, skipHeard = true, stopOnClose = true, muteGameGreetings = true,
     ttsFallback = true, speakerStays = true,
     chroniclePause = true, zoneRecap = true, logStory = true, tips = true, levelMilestones = true, flightStory = true,
@@ -231,6 +233,8 @@ local function build()
     box("worldSpeech", L["NPCs talking in the world"], L["Speech bubbles and yells, like guards, villains and mobs. Only when nothing else is talking, and not the same line twice within two minutes."])
     box("mixedSure", L["Quiet when unsure of man or woman"], L["Some enemies come as both men and women, like Defias and Twilight Thugs. When the addon can't see which one is talking (often in a fight), it picks a voice. Tick to stay quiet instead. Enemy nameplates help it see them."])
     box("ghostQuips", L["A word on the way back"], L["When you run back to your body as a ghost, the narrator now and then says a short line. At most once every 15 minutes."])
+    box("fishingLines", L["A word while fishing"], L["When you cast your fishing line, the narrator now and then says a short line. At most once every 15 minutes."])
+    box("rareLines", L["Famous rares"], L["The first time you slay a famous rare that has a real story, the narrator tells it once the fight is over."])
     box("reactions", L["My character reacts"], L["Now and then your own character says a short line after handing in a quest, in a voice for your race and gender."])
 
     section(L["While talking"])
@@ -282,7 +286,7 @@ local function build()
     box("tips", L["Tips in the journal"], L["A short tip about what Chronicle can do, under a chapter in the journal."])
     box("levelMilestones", L["Level milestones"], L["Every 10th level, a short word from the narrator and two or three zones where new stories open up for your level. Nothing plays unless you click Listen."])
     box("flightStory", L["The story on flights"], L["When you take a flight, a small note offers the story so far in the zone you're flying to, or its welcome if you haven't been there. Nothing plays unless you click Listen."])
-    box("campfire", L["By the fire"], L["When you sit by a camp fire, a small window counts down the minute until the camp's benefits, offers a campfire tale about the zone while you wait, and then shows what the camp gave you."])
+    box("campfire", L["By the fire"], L["Near a camp fire, a short note says when the zone has a tale you haven't heard. Sit down, and the narrator tells the next one."])
     box("hideUnfound", L["Hide what I haven't found"], L["No hints at all about what you haven't found yet: no chapters still to discover in the journal or on the map, no road ahead, and no empty places or totals in the Library. Everything you have been through stays."])
     box("showLeft", L["Show what's left"], L["Lists the quests still to do in each chapter by name, level and quest giver, and shows where the chapters you haven't found yet start, in the journal and on the map. No story is given away."])
     box("questTabs", L["Side tabs on the quest window"], L["Listen and Recap as tabs on the right side of the quest window, like the journal's, instead of buttons inside it. Handy when other addons put their own buttons there."],

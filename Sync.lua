@@ -151,7 +151,11 @@ local function merge(data, sender)
             local store = ns.db[part] or {}
             ns.db[part] = store
             local count = 0
-            for _ in pairs(store) do count = count + 1 end
+            -- only what came from the party counts against the limit: a long-time player's own quests (all of
+            -- db.quests) would otherwise fill it and nothing from the party would be kept any more
+            for _, e in pairs(store) do
+                if type(e) == "table" and e.fromParty then count = count + 1 end
+            end
             for id, item in pairs(data[part]) do
                 if count >= LIMIT[part] then break end
                 -- only things we have nothing of: our own recordings are never overwritten or mixed with others

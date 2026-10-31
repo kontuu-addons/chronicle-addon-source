@@ -73,6 +73,7 @@ local function setText(q, key, text)
     text = clean(text)
     if type(text) == "string" and text ~= "" then
         q[key] = text
+        q.fromParty = nil -- read by this player now: their own recording, to be shared like any other
         q.by = q.by or {}
         q.by[key] = reader()
     end
