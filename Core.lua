@@ -354,10 +354,11 @@ ev:SetScript("OnEvent", function(_, event, arg)
         for _, fn in ipairs(ns.onLogin) do fn() end
 
         -- other voice addons would talk over Chronicle: say so once, leave the choice to the player
+        -- (Spoken Quests, Zones and Books are one addon now, Spoken; SpokenQuests is the old one, where not updated)
         local isLoaded = C_AddOns.IsAddOnLoaded
         local others = {}
-        for _, other in ipairs({ "VoiceOver", "VoiceOverForever", "SpokenQuests", "ForeverVoiceover", "ForeverTTS",
-                                "ChattyLittleNpc", "AI_VoiceOver", "AIQuestVoices" }) do
+        for _, other in ipairs({ "VoiceOver", "VoiceOverForever", "Spoken", "SpokenQuests", "ForeverVoiceover",
+                                "ForeverTTS", "ChattyLittleNpc", "AI_VoiceOver", "AIQuestVoices" }) do
             if isLoaded and isLoaded(other) then others[#others + 1] = other end
         end
         if #others > 0 and not ns.db.warnedOthers then
