@@ -107,12 +107,14 @@ local DEFAULTS = {
     storyPanel = true,   -- the zone's story panel on the world map, and the chapter count on continents
     showLeft = false,    -- quests still to do and where undiscovered chapters start (journal, map)
     logStory = true,     -- "The story so far" beside the quest log
-    campfire = true,     -- "By the fire": camp countdown, a campfire tale, and the camp's benefits
+    campfire = true,     -- "By the fire": a note near a camp fire, and the zone's tale when you sit down
     tips = true,         -- one small "Did you know?" under a journal chapter
     bigSubtitles = false, -- larger subtitle text in the speaker window
     checkVoices = false, -- Good / Bad buttons in the speaker window, for players who help check the voices
     flightStory = true,  -- on a flight: the story so far in the zone you're flying to
     ghostQuips = true,   -- running back as a ghost: now and then a short line from the narrator
+    fishingLines = true, -- casting a fishing line: now and then a short line from the narrator
+    rareLines = true,    -- the first kill of a famous rare: the narrator tells its story (only rares with real lore)
     levelMilestones = true, -- every 10th level: a word from the narrator and where new stories open up
     muteGameGreetings = true, -- silence the game's own "Greetings"/"Farewell" NPC voices so they don't talk over ours
     questMarkers = false, -- "!" at quest givers with quests for you, "?" where to hand in (off when Questie runs)
@@ -352,10 +354,11 @@ ev:SetScript("OnEvent", function(_, event, arg)
         for _, fn in ipairs(ns.onLogin) do fn() end
 
         -- other voice addons would talk over Chronicle: say so once, leave the choice to the player
+        -- (Spoken Quests, Zones and Books are one addon now, Spoken; SpokenQuests is the old one, where not updated)
         local isLoaded = C_AddOns.IsAddOnLoaded
         local others = {}
-        for _, other in ipairs({ "VoiceOver", "VoiceOverForever", "SpokenQuests", "ForeverVoiceover", "ForeverTTS",
-                                "ChattyLittleNpc", "AI_VoiceOver", "AIQuestVoices" }) do
+        for _, other in ipairs({ "VoiceOver", "VoiceOverForever", "Spoken", "SpokenQuests", "ForeverVoiceover",
+                                "ForeverTTS", "ChattyLittleNpc", "AI_VoiceOver", "AIQuestVoices" }) do
             if isLoaded and isLoaded(other) then others[#others + 1] = other end
         end
         if #others > 0 and not ns.db.warnedOthers then

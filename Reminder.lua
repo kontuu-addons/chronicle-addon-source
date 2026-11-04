@@ -31,7 +31,7 @@ local function recentRecaps(zone, max)
 end
 
 local function getToast()
-    if toast then toast.open = nil; return toast end
+    if toast then toast.open = nil; toast.history:Hide(); return toast end
     local t = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     t:SetSize(340, 74)
     -- drag it anywhere; right-click puts it back at the top of the screen (thanks alche)
@@ -82,6 +82,12 @@ local function getToast()
         t:Hide()
         if t.open then t.open() else ns.Journal.Toggle() end
     end)
+    -- zone welcomes: the zone's longer history, for those who want all the lore (only shown when it is voiced)
+    t.history = CreateFrame("Button", nil, t, "UIPanelButtonTemplate")
+    t.history:SetSize(80, 20); ns.FitButton(t.history); t.history:SetPoint("LEFT", t.journal, "RIGHT", 6, 0)
+    t.history:SetText(L["History"])
+    t.history:SetScript("OnClick", function() ns.Voice.PlayQueue({ t.historyKey }); t:Hide() end)
+    t.history:Hide()
     local close = CreateFrame("Button", nil, t, "UIPanelCloseButton")
     close:SetSize(24, 24); close:SetPoint("TOPRIGHT", 0, 0)
 
@@ -181,6 +187,8 @@ function R.ShowWelcome(zone)
     else
         t.journal:SetPoint("TOPLEFT", t.sub, "BOTTOMLEFT", -2, -6)
     end
+    t.historyKey = "hist:" .. zone
+    t.history:SetShown(voiced and ns.Voice.Get(t.historyKey) ~= nil)
     t.title:SetText((L["Welcome to %s"]):format(ns.zoneLocal(zone)))
     t.sub:SetText(text)
     t.hideAt = GetTime() + SHOW_FOR
@@ -211,9 +219,12 @@ function R.ShowFlight(zone)
     return true
 end
 
+local ev -- created below; onZone waits for the end of a fight on it
+
 local function onZone()
     local zone = GetRealZoneText and ns.zoneEN(ns.clean(GetRealZoneText()))
     if not zone or zone == "" or not ns.char then return end
+    if UnitOnTaxi("player") then return end -- flying over a zone isn't visiting it; landing checks again
     local inInstance, kind = IsInInstance()
     if inInstance and (kind == "party" or kind == "raid") then
         if ns.settings.zoneRecap and not announced[zone] then
@@ -223,25 +234,34 @@ local function onZone()
         return
     end
     announced = {} -- leaving resets, so the next run gets the offer again
+    -- not in combat: mark the zone as seen only when the welcome could really show, else it is lost for good (thanks Pylo)
+    if InCombatLockdown() then ev:RegisterEvent("PLAYER_REGEN_ENABLED") return end
     ns.char.zoneSeen = ns.char.zoneSeen or {}
     local last = ns.char.zoneSeen[zone]
     ns.char.zoneSeen[zone] = time()
-    if not last and ns.settings.zoneIntro and not InCombatLockdown() then
+    if not last and ns.settings.zoneIntro then
         R.ShowWelcome(zone)
-    elseif ns.settings.zoneRecap and last and time() - last > AWAY and not InCombatLockdown() then
+    elseif ns.settings.zoneRecap and last and time() - last > AWAY then
         R.Show(zone)
     end
 end
 
-local ev = CreateFrame("Frame")
-ev:SetScript("OnEvent", function() C_Timer.After(2, onZone) end)
+ev = CreateFrame("Frame")
+ev:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_REGEN_ENABLED" then self:UnregisterEvent(event) end -- the fight is over: look at the zone again
+    C_Timer.After(2, onZone)
+end)
 table.insert(ns.onLogin, function()
     ev:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+    ev:RegisterEvent("PLAYER_CONTROL_GAINED")
     C_Timer.After(6, onZone) -- logging back in after a break counts as returning too
 end)
 
 -- keep "last seen" fresh while you stay in a zone, so a long session there is not "away"
 C_Timer.NewTicker(300, function()
     local zone = GetRealZoneText and ns.zoneEN(ns.clean(GetRealZoneText()))
-    if zone and zone ~= "" and ns.char and ns.char.zoneSeen then ns.char.zoneSeen[zone] = time() end
+    -- only a zone already seen: a new one must still get its welcome (and a zone flown over isn't seen)
+    if zone and zone ~= "" and ns.char and ns.char.zoneSeen and ns.char.zoneSeen[zone] and not UnitOnTaxi("player") then
+        ns.char.zoneSeen[zone] = time()
+    end
 end)

@@ -85,6 +85,12 @@ end
 ns.L = setmetatable({}, { __index = function(_, k) return k end })
 ns.locale = LOCALE
 
+-- A date for display. The game's date() has English month names only, so other languages get the numeric form.
+function ns.Date(t)
+    if ENGLISH then return date("%d %b %Y", t) end
+    return date(LOCALE == "deDE" and "%d.%m.%Y" or "%d/%m/%Y", t)
+end
+
 -- Buttons are sized for the English labels; in other languages they grow to fit their text.
 function ns.FitButton(b)
     if ENGLISH or not b then return b end

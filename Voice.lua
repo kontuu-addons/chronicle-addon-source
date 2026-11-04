@@ -64,6 +64,8 @@ function V.Subtitle(key)
     if id then return l.quests and l.quests[tonumber(id)] and l.quests[tonumber(id)].summary end
     local zone = key:match("^zone:(.+)")
     if zone then return l.zoneIntro and l.zoneIntro[zone] end
+    local hist = key:match("^hist:(.+)")
+    if hist then return l.history and l.history[hist] end
     local tale, n = key:match("^tale:([^:]+):(%d+)$")
     if tale then return l.campfireMore and l.campfireMore[tale] and l.campfireMore[tale][tonumber(n) - 1] end
     tale = key:match("^tale:(.+)")
@@ -72,6 +74,16 @@ function V.Subtitle(key)
     if lvl then return l.levels and l.levels[lvl] end
     local ghost = tonumber(key:match("^ghost:(%d+)$") or "")
     if ghost then return l.ghost and l.ghost[ghost] end
+    local fish = tonumber(key:match("^fish:(%d+)$") or "")
+    if fish then return l.fishing and l.fishing[fish] end
+    local legend = key:match("^legend:(.+)")
+    if legend then
+        for _, e in ipairs(l.legends or {}) do if e.id == legend then return e.text end end
+        return nil
+    end
+    local rare = tonumber(key:match("^rare:(%d+)$") or "")
+    if rare then return l.rares and l.rares[rare] and l.rares[rare].text end
+    if key:match("^hum:") then return nil end -- your own character humming: nothing to read
     local epi = key:match("^epi:(.+)")
     if epi then return l.epilogue and l.epilogue[epi] end
     local dng = key:match("^dng:(.+)")
@@ -247,7 +259,6 @@ local function changed()
     if ns.Books and ns.Books.Update then ns.Books.Update() end
     if ns.Journal and ns.Journal.OnVoiceChanged then ns.Journal.OnVoiceChanged() end
     if ns.Map and ns.Map.OnVoiceChanged then ns.Map.OnVoiceChanged() end
-    if ns.Campfire and ns.Campfire.OnVoiceChanged then ns.Campfire.OnVoiceChanged() end
 end
 
 local ttsActive = false
@@ -320,7 +331,6 @@ local startedTime = 0
 local function start(entry, key)
     paused = nil -- something new is talking: the paused line is let go
     stopSound()
-    playingKey = key
     startedTime = GetTime()
     holdBackground()
     holdDuck()
@@ -342,8 +352,14 @@ local function start(entry, key)
         return false
     end
     handle = h
+    playingKey = key -- only a line that really plays: Replay and Back work on it
     -- heard once it really plays: a file that failed would otherwise be skipped as "already heard" from then on
     if ns.char and ns.char.heard and key and (key:match("^q%d") or key:sub(1, 4) == "book") then ns.char.heard[key] = true end
+    -- a campfire tale counts as heard once it really plays, not when it was queued (a Play may drop the queue)
+    local tale = ns.char and key and key:match("^tale:(.+)")
+    if tale then ns.char.tales = ns.char.tales or {}; ns.char.tales[tale] = time() end
+    local legend = ns.char and key and key:match("^legend:(.+)") -- a legend by the fire, the same
+    if legend then ns.char.legends = ns.char.legends or {}; ns.char.legends[legend] = time() end
     lastKey = key or lastKey -- only a line that really plays: Replay, Play/Stop and /lore report use it
     if key and history[#history] ~= key then -- Back steps through the lines that really played
         history[#history + 1] = key
@@ -415,6 +431,7 @@ function V.HasPrev() return lineBefore() ~= nil end
 function V.Prev()
     local back, i = lineBefore()
     if not back then return false end
+    ownedBy[playingKey] = owner -- this line waits again with the button that started it
     local rest = { playingKey, unpack(waitingLines()) }
     for j = #history, i, -1 do history[j] = nil end -- both leave the history; start() adds the line before again
     return playNow(back, rest)
@@ -545,14 +562,30 @@ local function reactionKey()
     return lastReaction
 end
 
+-- The recap waits while you're still talking to the NPC: when they offer the next quest, the quest giver speaks
+-- first, and the recap comes once you close the window or walk away (thanks to a player on Reddit).
+local talking = false   -- a gossip or quest window is open (by the game's events, so Immersion-style addons count too)
+local heldRecaps = {}
+local function releaseRecaps()
+    if talking or #heldRecaps == 0 then return end
+    local keys = heldRecaps
+    heldRecaps = {}
+    for _, k in ipairs(keys) do V.Enqueue(k) end
+end
+V.ReleaseRecaps = releaseRecaps
+
 function V.OnQuestTurnedIn(questID)
     C_Timer.After(0.2, function()
         if ns.settings.reactions then
             local k = reactionKey()
             if k then V.Enqueue(k) end
         end
-        if ns.settings.recapAfterTurnIn then V.Enqueue("sum:" .. questID) end
+        if ns.settings.recapAfterTurnIn then heldRecaps[#heldRecaps + 1] = "sum:" .. questID end
     end)
+    -- the window closes on hand-in; when the NPC has more to say it opens again within a moment
+    C_Timer.After(0.6, releaseRecaps)
+    -- never lost: a window that closed without telling us doesn't keep the recap forever
+    C_Timer.After(120, function() talking = false; releaseRecaps() end)
 end
 
 -- Play several lines back to back (chapter recaps). A new list starts a new history for Back; keep: the same list
@@ -626,7 +659,15 @@ local function afterGameGreeting(fn)
 end
 local closeEv = CreateFrame("Frame")
 for _, e in ipairs({ "GOSSIP_CLOSED", "QUEST_FINISHED" }) do pcall(closeEv.RegisterEvent, closeEv, e) end
+local openEv = CreateFrame("Frame")
+for _, e in ipairs({ "GOSSIP_SHOW", "QUEST_GREETING", "QUEST_DETAIL", "QUEST_PROGRESS", "QUEST_COMPLETE" }) do
+    pcall(openEv.RegisterEvent, openEv, e)
+end
+openEv:SetScript("OnEvent", function() talking = true end)
 closeEv:SetScript("OnEvent", function()
+    talking = false
+    -- held recaps go once the conversation is really over (a gossip page closing into a quest page is not)
+    C_Timer.After(0.6, releaseRecaps)
     ended, endTime = true, GetTime()
     -- a greeting still waiting its turn belongs to a conversation that is over: it would play long after (the wind
     -- rider master greeting you in Thunder Bluff), so it goes, and greets you next time instead (thanks Alche)

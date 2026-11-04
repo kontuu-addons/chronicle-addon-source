@@ -5,7 +5,8 @@ local _, ns = ...
 
 local function onArea()
     if not (ns.char and ns.settings and ns.settings.areaIntros) or ns.settings.journalOnly then return end
-    if InCombatLockdown() or IsInInstance() then return end
+    -- on a flight the places only pass below: they wait until you go there yourself (thanks tranced93)
+    if InCombatLockdown() or IsInInstance() or UnitOnTaxi("player") then return end
     local zone = ns.zoneEN(ns.clean(GetRealZoneText()))
     local place = ns.clean(GetSubZoneText())
     if not (zone and zone ~= "" and place and place ~= "" and place ~= zone) then return end
@@ -31,4 +32,5 @@ table.insert(ns.onLogin, function()
     ev:RegisterEvent("ZONE_CHANGED")
     ev:RegisterEvent("ZONE_CHANGED_INDOORS")
     ev:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+    ev:RegisterEvent("PLAYER_CONTROL_GAINED") -- landing: the place you land in is yours now
 end)

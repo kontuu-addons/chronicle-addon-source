@@ -65,11 +65,11 @@ local function about(key)
         return ok and t or nil
     end
     if kind == "gos" or kind == "qg" then
-        return "Greeting"
+        return L["Greeting"]
     elseif kind == "bio" then
-        return "Who's who"
+        return L["Who's who"]
     elseif kind == "book" or kind == "bookr" then
-        return "Reading"
+        return L["Reading"]
     elseif kind == "react" then
         return ""
     elseif kind == "area" then
@@ -635,7 +635,12 @@ function T.Show(entry, key)
         -- recaps and chapters tell the story; quest text from a poster or an item, books and plaques are read out
         local k = key or ""
         local zone = k:match("^zone:(.+)") or k:match("^area:([^:]+):") or k:match("^dng:(.+)") or k:match("^epi:([^|]+)") or k:match("^dend:([^:|]+)")
-        local tale = k:match("^tale:(.+)")
+        local tale = k:match("^tale:([^:]+)")
+        local legendId, legend = k:match("^legend:(.+)"), nil
+        for _, e in ipairs(legendId and ns.Lore and ns.Lore.legends or {}) do
+            if e.id == legendId then legend = e.title end -- a legend by the fire: its own title
+        end
+        if tale or legendId then f.icon:SetTexture("Interface\\Icons\\Spell_Fire_Fire") end
         local attId, att = k:match("^att:(.+)"), nil
         local bioId = tonumber(k:match("^bio:(%d+)$") or "")
         for name, e in pairs(bioId and ns.Lore and ns.Lore.npcs or {}) do
@@ -644,7 +649,8 @@ function T.Show(entry, key)
         for _, a in ipairs(attId and ns.Lore and ns.Lore.attunements or {}) do
             if a.id == attId then att = (L["The road to %s"]):format(a.title) end
         end
-        f.title:SetText(att or tale and (L["By the fire: %s"]):format(ns.zoneLocal(tale)) or zone and ns.zoneLocal(zone)
+        f.title:SetText(att or tale and (L["By the fire: %s"]):format(ns.zoneLocal(tale))
+            or legend and (L["By the fire: %s"]):format(legend) or zone and ns.zoneLocal(zone)
             or (k:match("^sum:") or k:match("^arc:")) and L["The story so far"]
             or k:match("^ghost:") and L["On the way back"]
             or k:match("^lvl:(%d+)") and (L["Level %d"]):format(tonumber(k:match("^lvl:(%d+)")))
