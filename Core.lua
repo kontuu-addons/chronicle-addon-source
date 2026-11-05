@@ -89,7 +89,8 @@ local DEFAULTS = {
     speakerStays = false, -- the speaker window stays up after the last line until it is closed
     speakerPlayer = true, -- the speaker window's player row (back, stop, next, replay); off: play/stop and replay by the X
     speakerBg = 1,       -- how strong the speaker window's background is (0 = only the words)
-    recapAfterTurnIn = true, -- narrator reads the story recap after you hand in a quest
+    recapAfterTurnIn = false, -- narrator reads the story recap after you hand in a quest (off for new players since
+                             -- 1.1.0, the user's call; saved settings keep what they had)
     minimap = true,      -- minimap button
     minimapFree = false, -- the button anywhere on the screen instead of on the minimap edge
     zoneRecap = true,    -- "Previously in <zone>" when returning to a zone
@@ -115,6 +116,7 @@ local DEFAULTS = {
     ghostQuips = true,   -- running back as a ghost: now and then a short line from the narrator
     fishingLines = true, -- casting a fishing line: now and then a short line from the narrator
     rareLines = true,    -- the first kill of a famous rare: the narrator tells its story (only rares with real lore)
+    bestiary = true,     -- the first kills of a zone's notable creatures: a note offers what a local knows of them
     levelMilestones = true, -- every 10th level: a word from the narrator and where new stories open up
     muteGameGreetings = true, -- silence the game's own "Greetings"/"Farewell" NPC voices so they don't talk over ours
     questMarkers = false, -- "!" at quest givers with quests for you, "?" where to hand in (off when Questie runs)

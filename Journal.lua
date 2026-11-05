@@ -7,18 +7,19 @@ ns.Journal = J
 
 local W, H, LIST_W = 900, 580, 250
 local frame, list, listScroll, page, pageScroll, search
-local tab = "story"                -- "story", "people", "attune" or "dungeons"
+local tab = "story"                -- "story", "people", "attune", "dungeons" or "beasts"
 local listRows, entryRows = {}, {}
 local chapters, selected = {}, nil
 local attuneList, dungeonList = {}, {}
 -- tabs with their own list on the left (and their own selection)
-local OWN_LIST = { attune = true, dungeons = true }
+local OWN_LIST = { attune = true, dungeons = true, beasts = true }
+local BEAST_ICON = "Interface\\Icons\\Ability_Tracking" -- the Bestiary tab: a hunter's tracks
 
 -- the game's soft click when picking something from a list (chapters, characters, zones)
 local function click() if SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end end
 local people, selectedPerson = {}, nil
 local filter = ""
-local header, person = {}, {}
+local header, person, beast = {}, {}, {}
 
 -- colors: dark leather frame, parchment page with ink-colored text
 local INK, INK_TITLE, INK_SOFT = { 0.18, 0.11, 0.05 }, { 0.08, 0.05, 0.02 }, { 0.30, 0.21, 0.11 }
@@ -85,10 +86,67 @@ end
 -- a quest picked by profession ("Camping 101: Mining"): never missing, only shown once done
 local function optional(id) return (lore().optional or {})[id] end
 
+-- one of a group of which only one can be done (Lore "exclusive": Call of Fire from four trainers, Little Pamela or
+-- Sister Pamela): out of reach once another of its group is done or in your quest log
+local groupMembers
+function J.SiblingTaken(id)
+    local ex = lore().exclusive
+    local g = ex and ex[id]
+    if not g then return false end
+    if not groupMembers then
+        groupMembers = {}
+        for q, gid in pairs(ex) do
+            groupMembers[gid] = groupMembers[gid] or {}
+            table.insert(groupMembers[gid], q)
+        end
+    end
+    for _, other in ipairs(groupMembers[g] or {}) do
+        if other ~= id and (flaggedDone(other) or ns.char.active[other]) then return true end
+    end
+    return false
+end
+
+-- a quest this character can never take: another class's, the other side's, or (for the eight races of old, whose
+-- bits the old masks know) another race's. A new race (the Skyborne) goes by its side only
+local ALLIANCE, HORDE = 1 + 4 + 8 + 64, 2 + 16 + 32 + 128
+local function neverMine(id)
+    local q = ns.Map and ns.Map.QuestInfo(id)
+    if not q then return false end
+    local classBit = 2 ^ ((select(3, UnitClass("player")) or 1) - 1)
+    if (q.classes or 0) > 0 and bit.band(q.classes, classBit) == 0 then return true end
+    local races = q.races or 0
+    if races == 0 then return false end
+    local race = select(3, UnitRace("player")) or 1
+    if race <= 8 then return bit.band(races, 2 ^ (race - 1)) == 0 end
+    local side = UnitFactionGroup("player")
+    local mask = side == "Alliance" and ALLIANCE or side == "Horde" and HORDE or nil
+    return mask ~= nil and bit.band(races, mask) == 0
+end
+
+-- How many steps a chapter has for this character: every quest done or taken, and of the rest those it can still
+-- take. A profession quest counts once taken, another side's or class's never, and a group of which only one can be
+-- done is one step (thanks Azerail: the Valley of Trials could never be finished)
+function J.ChapterTotal(quests)
+    local c, ex = ns.char, lore().exclusive or {}
+    local total, taken, open = 0, {}, {}
+    for _, id in ipairs(quests or {}) do
+        local g = ex[id]
+        if c.done[id] or c.active[id] then
+            total = total + 1
+            if g then taken[g] = true end
+        elseif not (optional(id) or neverMine(id) or J.SiblingTaken(id)) then
+            if g then open[g] = true else total = total + 1 end
+        end
+    end
+    for g in pairs(open) do if not taken[g] then total = total + 1 end end
+    return total
+end
+
 function J.StillToDo(quests)
     local out = {}
     for _, id in ipairs(quests or {}) do
-        if not optional(id) and not flaggedDone(id) and not ns.char.active[id] and (not ns.Map or ns.Map.ForMe(id)) then
+        if not optional(id) and not flaggedDone(id) and not ns.char.active[id] and (not ns.Map or ns.Map.ForMe(id))
+            and not J.SiblingTaken(id) then
             local info = ns.Map and ns.Map.QuestInfo(id) or {}
             local title = (ns.db.quests[id] and ns.db.quests[id].title) or info.t or (lore().titles or {})[id]
             if not title then
@@ -217,10 +275,8 @@ function J.BuildChapters(withLocked)
                 used[id] = true
             end
         end
-        -- the total counts the profession quests only when you have taken them
-        for _, id in ipairs(foreign and {} or arc.quests or {}) do
-            if optional(id) and not (c.done[id] or c.active[id]) then ch.total = ch.total - 1 end
-        end
+        -- what this character can do of it: profession quests once taken, one of a group, not the other side's
+        if not foreign then ch.total = J.ChapterTotal(arc.quests) end
         if #ch.entries > 0 then
             out[#out + 1] = ch
         elseif withLocked and not foreign and J.ArcForMe(arc) then
@@ -294,10 +350,12 @@ function J.BuildChapters(withLocked)
     return out
 end
 
--- everyone who gave you or took a quest, most recent first
+-- everyone who gave you or took a quest, most recent first, with where you met them (p.zones, the first one p.met):
+-- a giver where you took the quest, whoever took it where you handed it in (Sylvanas is met in the Undercity, though
+-- the paladin's quest that brings you to her starts in Tirisfal)
 local function buildPeople()
     local byName, order = {}, {}
-    local function touch(name, id, state, rank)
+    local function touch(name, id, state, rank, zone)
         if not name then return end
         local p = byName[name]
         if not p then
@@ -306,8 +364,14 @@ local function buildPeople()
             order[#order + 1] = p
         end
         p.rank = math.max(p.rank, rank)
+        p.zones = p.zones or {}
+        local known = not zone
+        for _, z in ipairs(p.zones) do known = known or z == zone end
+        if not known then p.zones[#p.zones + 1] = zone end
+        p.met = p.zones[1]
         if not p.state[id] then p.state[id] = state; p.list[#p.list + 1] = id end
     end
+    local function takenAt(id) return ns.db.quests[id] and ns.db.quests[id].zone end
     -- a quest recorded in another race's starting zone (a twin of this character's own, sharing its number):
     -- its giver there is not someone this character has met
     local myRace = select(2, UnitRace("player"))
@@ -318,16 +382,17 @@ local function buildPeople()
     end
     for i, e in ipairs(ns.char.journal) do
         if not elsewhere(e.id) then
-            touch(personOf(e.id, "giver"), e.id, "done", i)
-            touch(personOf(e.id, "ender"), e.id, "done", i)
+            touch(personOf(e.id, "giver"), e.id, "done", i, takenAt(e.id))
+            touch(personOf(e.id, "ender"), e.id, "done", i, e.t and e.zone or takenAt(e.id))
         end
     end
     local n = #ns.char.journal
-    for id in pairs(ns.char.active) do touch(personOf(id, "giver"), id, "active", n + 1) end
+    for id in pairs(ns.char.active) do touch(personOf(id, "giver"), id, "active", n + 1, takenAt(id)) end
     table.sort(order, function(a, b) return a.rank > b.rank end)
     people = order
     return order
 end
+J.People = buildPeople
 
 -- narrator recap for a chapter: arc intro, then the per-quest recaps of quests you finished
 local function recapKeys(ch)
@@ -707,6 +772,8 @@ local function hideAll()
     for _, v in pairs(header) do if v.Hide then v:Hide() end end
     for _, v in pairs(person) do if type(v) == "table" and v.Hide then v:Hide() end end
     for _, r in ipairs(person.deal or {}) do r:Hide() end
+    for _, v in pairs(beast) do if type(v) == "table" and v.Hide then v:Hide() end end
+    for _, e in ipairs(beast.entries or {}) do e.head:Hide(); e.play:Hide(); e.body:Hide() end
 end
 
 -- Show what's left lines on the parchment: a missing quest (click: a marker at its giver on the map), or a quiet
@@ -724,16 +791,25 @@ local function getTodoRow(i)
     r:SetScript("OnClick", function(self)
         click()
         local q = self.quest
-        if q and q.open then J.Open(q.open)
+        if q and q.fn then q.fn()
+        elseif q and q.open then J.Open(q.open)
         elseif q and q.keys then
             if ns.Voice.Owner() == self then ns.Voice.Stop() else ns.Voice.PlayQueue(q.keys, self) end
-        elseif q and ns.Map then ns.Map.Waypoint(q.zone, q.x, q.y, q.title) end
+        elseif q and q.x and ns.Map then ns.Map.Waypoint(q.zone, q.x, q.y, q.title) end
     end)
     r:SetScript("OnEnter", function(self)
-        if not (self.quest and self.quest.x) then return end
+        local q = self.quest
+        if q and q.text then -- an entry to read (the bestiary): its words, for those without the voices too
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(q.tipTitle or q.title, 1, 1, 1)
+            GameTooltip:AddLine(q.text, 0.85, 0.85, 0.85, true)
+            GameTooltip:Show()
+            return
+        end
+        if not (q and q.x) then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(self.quest.title, 1, 1, 1)
-        GameTooltip:AddLine(self.quest.tip or L["Click to mark the quest giver on the map"], 0.8, 0.8, 0.8)
+        GameTooltip:SetText(q.title, 1, 1, 1)
+        GameTooltip:AddLine(q.tip or L["Click to mark the quest giver on the map"], 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
     r:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -755,7 +831,7 @@ local function placeTodos(items, y, n, pw, x)
             r.title:ClearAllPoints(); r.title:SetPoint("TOPLEFT", 0, 0)
             r.title:SetFontObject("QuestTitleFont"); r.title:SetText(q); r.who:SetText("")
         else
-            r.quest = q; r:EnableMouse(q.x ~= nil or q.open ~= nil or q.keys ~= nil)
+            r.quest = q; r:EnableMouse(q.x ~= nil or q.open ~= nil or q.keys ~= nil or q.text ~= nil or q.fn ~= nil)
             r.pin:SetTexture(q.icon or "Interface\\AddOns\\ForeverChronicle\\Media\\pin")
             r.pin:SetSize(q.icon and 16 or 14, q.icon and 16 or 14)
             r.pin:SetShown(q.x ~= nil or q.icon ~= nil)
@@ -1151,16 +1227,21 @@ local function renderZone(zone)
                 from = L["Click to hear it"], keys = { key }, icon = "Interface\\Icons\\Spell_Fire_Fire" }
         end
     end
+    -- the zone's welcome (the narrator's introduction the first time you came here), to read again (thanks emmaloui:
+    -- a welcome closed by mistake was gone, but for /lore welcome in the zone itself)
+    local welcome = ns.char.zoneSeen and ns.char.zoneSeen[zone] and (lore().zoneIntro or {})[zone]
+    local function intro(s) header.intro:SetText(welcome and (welcome .. "\n\n" .. s) or s) end
     if #done + #going + #hidden == 0 then
-        header.intro:SetText(L["No chapters known here yet."])
-        local y = tale and placeTodos(tale, -(54 + header.intro:GetStringHeight() + 16), 1, pw)
-        page:SetHeight(y and (-y + 20) or 120)
+        intro(L["No chapters known here yet."])
+        local top = -(54 + header.intro:GetStringHeight() + 16)
+        local y = tale and placeTodos(tale, top, 1, pw)
+        page:SetHeight(-(y or top) + 20)
         return
     end
     if #going + #hidden == 0 then
-        header.intro:SetText(L["Every chapter here is finished."])
+        intro(L["Every chapter here is finished."])
     else
-        header.intro:SetText(ns.settings.showLeft and L["Click a quest to mark its quest giver on the map."]
+        intro(ns.settings.showLeft and L["Click a quest to mark its quest giver on the map."]
             or L["Turn on Show what's left in the options to see the missing quests and where to get them."])
     end
     local y, n = -(54 + header.intro:GetStringHeight() + 16), 1
@@ -1262,8 +1343,8 @@ local function renderZone(zone)
         table.sort(seen)
         local items = {}
         for _, key in ipairs(seen) do
-            items[#items + 1] = { title = key:sub(#prefix + 1), from = L["Click to hear it"], keys = { key },
-                icon = "Interface\\Icons\\INV_Misc_Map_01" }
+            items[#items + 1] = { title = key:sub(#prefix + 1), from = ns.Voice.Subtitle(key) or L["Click to hear it"],
+                keys = { key }, icon = "Interface\\Icons\\INV_Misc_Map_01" }
         end
         y, n = placeTodos({ ns.settings.hideUnfound and ("%s  (%d)"):format(L["Places"], #seen)
             or ("%s  (%d/%d)"):format(L["Places"], #seen, total) }, y, n, pw)
@@ -1284,6 +1365,15 @@ local function renderZone(zone)
         end
         y, n = placeTodos({ ("%s  (%d)"):format(L["Famous rares"], #slain) }, y, n, pw)
         y, n = placeTodos(items, y, n, pw)
+        y = y - 10
+    end
+    -- the zone's creatures live on the Bestiary tab: one line here goes to this land there
+    local beasts, beastTotal = {}, 0
+    if ns.Bestiary then beasts, beastTotal = ns.Bestiary.ZoneEntries(zone) end
+    if beastTotal > 0 and (#beasts > 0 or not ns.settings.hideUnfound) then
+        y, n = placeTodos({ { title = L["Bestiary"], icon = BEAST_ICON, fn = function() J.ShowBestiary(zone) end,
+            from = ns.settings.hideUnfound and (L["%d found"]):format(#beasts)
+                or (L["%d of %d found"]):format(#beasts, beastTotal) } }, y, n, pw)
         y = y - 10
     end
     if tale then y, n = placeTodos(tale, y, n, pw) end
@@ -1442,7 +1532,7 @@ local function dungeons()
                     d.total = d.total + (ch.total or #ch.entries)
                 elseif J.ArcForMe(a) and a.quests and a.quests[1] then
                     d.chapters[#d.chapters + 1] = { title = a.title, locked = true, first = a.quests[1] }
-                    d.total = d.total + #a.quests
+                    d.total = d.total + J.ChapterTotal(a.quests)
                 end
             end
         end
@@ -2060,6 +2150,225 @@ local function renderLibrary()
     page:SetHeight(-y + 20)
 end
 
+-- ---------------------------------------------------------------- render: places
+-- Every named place this character has walked into (Areas.lua: the narrator's line the first time), land by land, the
+-- lands you were in last first: click one to hear it again (the user wanted "an overview of stuff i forgot"; the
+-- places sat only at the bottom of each zone's page). Places not visited yet are only counted. From the voice packs:
+-- the lines are spoken only, so there are none without the voices.
+local function placeBook()
+    local byZone, lands, found, total = {}, {}, 0, 0
+    local seen = ns.char.areaSeen or {}
+    for key in pairs(ns.audio or {}) do
+        local zone, place
+        if type(key) == "string" then zone, place = key:match("^area:([^:]+):([^:]+)$") end
+        if zone then
+            local l = byZone[zone]
+            if not l then
+                l = { zone = zone, seen = {}, total = 0, last = 0 }
+                byZone[zone] = l; lands[#lands + 1] = l
+            end
+            l.total, total = l.total + 1, total + 1
+            if seen[key] then
+                found = found + 1
+                l.seen[#l.seen + 1] = { key = key, name = place }
+                l.last = math.max(l.last, type(seen[key]) == "number" and seen[key] or 1)
+            end
+        end
+    end
+    for _, l in ipairs(lands) do table.sort(l.seen, function(a, b) return a.name < b.name end) end
+    table.sort(lands, function(a, b)
+        if a.last ~= b.last then return a.last > b.last end
+        return a.zone < b.zone
+    end)
+    return { lands = lands, found = found, total = total }
+end
+
+local function renderPlaces()
+    local pw = page:GetWidth()
+    local width = pw - 10
+    hideAll()
+    header.title:Show(); header.sub:Show(); header.intro:Show()
+    header.title:SetText(L["Places"])
+    local pb = placeBook()
+    local hide = ns.settings.hideUnfound
+    header.sub:SetText(hide and (L["%d found"]):format(pb.found) or (L["%d of %d found"]):format(pb.found, pb.total))
+    header.intro:SetWidth(width)
+    header.intro:SetText(pb.found > 0
+        and L["Every named place you have walked into, land by land, as the narrator told it the first time. Click one to hear it again."]
+        or L["Walk into the named places of a land (a village, a mine, an old ruin) and the narrator tells you about them. They gather here."])
+    local y, n = -(54 + header.intro:GetStringHeight() + 16), 1
+    -- only the lands where you have heard of a place: what the narrator said of each, to read, and to hear again
+    for _, l in ipairs(pb.lands) do
+        if #l.seen > 0 then
+            y, n = placeTodos({ hide and ("%s  (%d)"):format(ns.zoneLocal(l.zone), #l.seen)
+                or ("%s  (%d/%d)"):format(ns.zoneLocal(l.zone), #l.seen, l.total) }, y, n, pw)
+            local items = {}
+            for _, p in ipairs(l.seen) do
+                items[#items + 1] = { title = p.name, from = ns.Voice.Subtitle(p.key) or L["Click to hear it"],
+                    keys = { p.key }, icon = "Interface\\Icons\\INV_Misc_Map_01" }
+            end
+            local left = l.total - #l.seen
+            if left > 0 and not hide then
+                items[#items + 1] = { title = "|cff8f8676" .. (left == 1 and L["1 more place to find here"]
+                    or (L["%d more places to find here"]):format(left)) .. "|r" }
+            end
+            y, n = placeTodos(items, y, n, pw)
+            y = y - 10
+        end
+    end
+    page:SetHeight(-y + 20)
+end
+
+-- ---------------------------------------------------------------- render: the bestiary
+-- The Bestiary tab: what the people of each land have told this character about its creatures (Bestiary.lua; a
+-- player's idea, after Diablo III's bestiary; thanks Heybarbaruiva). The list holds the lands and the creatures met in
+-- each; the overview shows how much of every land is told, and a creature's page its model, who tells of it, the kills
+-- and its entries, to hear again and to read. Creatures not met yet are only counted, never named or shown.
+local function beastBook()
+    return ns.Bestiary and ns.Bestiary.Book() or { zones = {}, found = 0, total = 0, met = 0 }
+end
+
+-- a land this character has been to (its welcome seen): only those show in the Bestiary, the others not at all
+local function beenTo(zone) return ns.char.zoneSeen ~= nil and ns.char.zoneSeen[zone] ~= nil end
+
+-- a land on the overview: how much of it is told (click: its first creature met)
+local function makeBeastLand()
+    local f = makeRoad()
+    f:SetScript("OnClick", function(self) if self.zone then click(); J.ShowBestiary(self.zone) end end)
+    return f
+end
+
+local function renderBeastBook()
+    local pw = page:GetWidth()
+    local width = pw - 10
+    hideAll()
+    header.title:Show(); header.sub:Show(); header.intro:Show()
+    header.title:SetText(L["Bestiary"])
+    local book = beastBook()
+    local hide = ns.settings.hideUnfound
+    header.sub:SetText(hide and (L["%d found"]):format(book.found) or (L["%d of %d found"]):format(book.found, book.total))
+    header.intro:SetWidth(width)
+    header.intro:SetText(book.found > 0
+        and L["What the people of each land have told you about its creatures. Pick one on the left to see it and to hear its stories again. Slay more of them to learn more."]
+        or L["Slay the notable creatures of a land (the Burning Blade, kobolds, scorpids...) and someone who lives there tells you what they know of them. Their stories gather here."])
+    local y = -(54 + header.intro:GetStringHeight() + 16)
+    local GAP = 8
+
+    -- the numbers, each in its own box
+    local stats = { { book.found, L["Found"] }, { book.met, L["Creatures"] }, { book.total - book.found, L["Still to find"] } }
+    if hide then stats[3] = nil end
+    local bw = (width - GAP * (#stats - 1)) / #stats
+    for k, st in ipairs(stats) do
+        local b = chronGet("stat", makeStat)
+        b:SetSize(bw, 50); b:SetPoint("TOPLEFT", page, "TOPLEFT", (k - 1) * (bw + GAP), y)
+        b.num:SetText(tostring(st[1])); b.label:SetText(st[2])
+    end
+    y = y - 50 - 20
+
+    -- every land, two to a row, the one you are in marked
+    local here = GetRealZoneText and ns.zoneEN(GetRealZoneText())
+    local cw, col = (width - GAP) / 2, 0
+    for _, z in ipairs(book.zones) do
+        if z.found > 0 or (not hide and beenTo(z.zone)) then
+            local b = chronGet("beastLand", makeBeastLand)
+            b:SetSize(cw, 62); b:SetPoint("TOPLEFT", page, "TOPLEFT", col * (cw + GAP), y)
+            b.zone = z.zone
+            b.title:SetText(ns.zoneLocal(z.zone))
+            b.here:SetShown(z.zone == here)
+            b.title:SetPoint("RIGHT", b.here:IsShown() and -(b.here:GetStringWidth() + 12) or -8, 0)
+            local names = {}
+            for _, g in ipairs(z.groups) do names[#names + 1] = g.name end
+            b.sub:SetText(table.concat(names, ", ")); b.sub:SetWidth(cw - 16); b.sub:SetWordWrap(false)
+            b.count:SetText(hide and (L["%d found"]):format(z.found) or (L["%d of %d found"]):format(z.found, z.total))
+            b.bar:SetShown(not hide); b.bar:SetValue(z.total > 0 and z.found / z.total or 0)
+            col = col + 1
+            if col == 2 then col, y = 0, y - 62 - GAP end
+        end
+    end
+    if col > 0 then y = y - 62 - GAP end
+    page:SetHeight(-y + 20)
+end
+
+-- the creature's model, turning slowly until you take it (drag to turn, scroll to zoom); drawn again on each render,
+-- the same creature where you left it
+local function beastZoom(m)
+    local z = m.zoom or 0
+    pcall(m.SetPortraitZoom, m, math.max(z, 0)); pcall(m.SetCamDistanceScale, m, z < 0 and 1 - z * 2 or 1)
+end
+
+local function beastModel(gid, g)
+    local m = beast.model
+    beast.window:Show()
+    pcall(m.ClearModel, m)
+    local ok = false
+    if g.model then ok = pcall(m.SetDisplayInfo, m, g.model) end
+    if not ok and g.npc then ok = pcall(m.SetCreature, m, g.npc) end -- Forever's own creatures, once seen
+    m:SetShown(ok); beast.hint:SetShown(ok); beast.icon:SetShown(not ok)
+    if not ok then return end
+    if m.gid ~= gid then m.gid, m.zoom, m.spin, m.facing = gid, 0, true, 0.5 end
+    beastZoom(m)
+    pcall(m.SetFacing, m, m.facing or 0.5)
+end
+
+-- a creature's page: its model, the land, the kills toward the next entry, then the entries (Listen hears one again;
+-- the words are here to read), and what the next one asks
+local function renderBeast(gid, g)
+    local pw = page:GetWidth()
+    hideAll()
+    beastModel(gid, g)
+    local B = ns.Bestiary
+    local kills = B.Kills(gid)
+    local x = 190 + 18
+    local cw = pw - x - 10
+    local y = -2
+    local function place(fs, gap)
+        fs:ClearAllPoints(); fs:SetPoint("TOPLEFT", page, "TOPLEFT", x, y); fs:SetWidth(cw); fs:Show()
+        y = y - fs:GetStringHeight() - (gap or 4)
+    end
+    beast.name:SetText(g.name); place(beast.name, 5)
+    beast.where:SetText(ns.zoneLocal(g.zone)); place(beast.where, 12)
+    local nextNeed
+    for _, need in ipairs(g.need or {}) do if kills < need then nextNeed = need; break end end
+    beast.kills:SetText(nextNeed and (L["%d/%d slain"]):format(kills, nextNeed) or (L["%d slain"]):format(kills))
+    place(beast.kills, 4)
+    beast.bar:ClearAllPoints(); beast.bar:SetPoint("TOPLEFT", page, "TOPLEFT", x, y); beast.bar:SetWidth(cw)
+    beast.bar:SetValue(nextNeed and kills / nextNeed or 1); beast.bar:Show()
+    y = y - 4 - 16
+
+    local voiced = not ns.settings.journalOnly
+    local who = g.who or ""
+    beast.entries = beast.entries or {}
+    for n, need in ipairs(g.need or {}) do
+        local e = beast.entries[n]
+        if not e then
+            e = { head = text(page, "GameFontNormal", INK_TITLE), body = text(page, "QuestFont", INK),
+                  play = button(page, L["Listen"], 70) }
+            e.body:SetSpacing(3)
+            e.play:SetScript("OnClick", function(self)
+                click(); toggle(self, function() ns.Voice.PlayQueue({ self.key }, self) end)
+            end)
+            beast.entries[n] = e
+        end
+        local open = kills >= need
+        e.head:SetText((n == 1 and L["Told by %s"] or L["More from %s"]):format(who))
+        e.head:SetAlpha(open and 1 or 0.55)
+        place(e.head, 6)
+        local key = B.Key(gid, n)
+        local hear = open and voiced and ns.Voice.Get(key) ~= nil
+        e.play.key = key
+        e.play:ClearAllPoints(); e.play:SetPoint("TOPRIGHT", page, "TOPRIGHT", -10, y + e.head:GetStringHeight() + 10)
+        e.play:SetText(ns.Voice.Owner() == e.play and L["Stop"] or L["Listen"])
+        e.play:SetShown(hear)
+        if open then
+            e.body:SetText(g.text and g.text[n] or ""); ink(e.body, INK)
+        else
+            e.body:SetText((L["Slay %d more to hear more from %s."]):format(need - kills, who)); ink(e.body, INK_SOFT)
+        end
+        place(e.body, 16)
+    end
+    page:SetHeight(math.max(-y, 280) + 10)
+end
+
 local function renderChronicle()
     local pw = page:GetWidth()
     local width = pw - 10
@@ -2273,9 +2582,10 @@ local function renderPerson(p)
 
     -- where you know them from, and what you did for them
     local zones, seen = {}, {}
+    local function addZone(z) if z and not seen[z] then seen[z] = true; zones[#zones + 1] = ns.zoneLocal(z) end end
+    for _, z in ipairs(p.zones or {}) do addZone(z) end
     for _, id in ipairs(p.list) do
-        local z = (ns.db.quests[id] or {}).zone or ns.LoreZone(id)
-        if z and not seen[z] then seen[z] = true; zones[#zones + 1] = ns.zoneLocal(z) end
+        if not (ns.db.quests[id] or {}).zone then addZone(ns.LoreZone(id)) end -- no place recorded: its chapter's
         for _, kind in ipairs({ "detail", "complete", "progress" }) do
             local k = "q" .. id .. ":" .. kind
             if not firstKey and ns.Voice.Get(k) and (kind == "detail" and personOf(id, "giver") == p.name or kind ~= "detail" and personOf(id, "ender") == p.name) then
@@ -2395,6 +2705,17 @@ local function renderList()
                 if r.diamond then r.count:SetText(tostring(found)); r.chapter = nil end
             end
         end
+        -- Places: every named place the narrator told this character of, to hear again (spoken only: with the voices)
+        if filter == "" and not ns.settings.journalOnly then
+            local pb = placeBook()
+            if pb.total > 0 then
+                local r = row("chapter")
+                card(r, "places", L["Places"], ns.settings.hideUnfound and (L["%d found"]):format(pb.found)
+                    or (L["%d of %d found"]):format(pb.found, pb.total), pb.found, pb.total, false)
+                r.bar:SetShown(not ns.settings.hideUnfound)
+                if r.diamond then r.count:SetText(tostring(pb.found)); r.chapter = nil end
+            end
+        end
         -- chapters arrive grouped by zone; collect the runs first so each header knows its count
         local runs = {}
         for _, ch in ipairs(chapters) do
@@ -2506,6 +2827,45 @@ local function renderList()
                 end
             end
         end
+    elseif tab == "beasts" then
+        -- the whole bestiary, then each land with the creatures met there (a gem: the entries heard; the bar: the
+        -- kills toward the next one) and how many are still to find
+        local book, hide = beastBook(), ns.settings.hideUnfound
+        local r = row("chapter")
+        card(r, "beasts", L["Bestiary"], hide and (L["%d found"]):format(book.found)
+            or (L["%d of %d found"]):format(book.found, book.total), book.found, book.total, false)
+        r.bar:SetShown(not hide)
+        if r.diamond then r.chapter = nil end
+        for i, z in ipairs(book.zones) do
+            local shown, holds = {}, false
+            for _, g in ipairs(z.groups) do
+                if matches(g.name, z.zone, ns.zoneLocal(z.zone)) then
+                    shown[#shown + 1] = g
+                    holds = holds or selected == "beast:" .. g.gid
+                end
+            end
+            if #shown > 0 or (filter == "" and not hide and beenTo(z.zone)) then
+                local open = zoneOpen("beasts", z.zone, i, holds)
+                zoneHeader(row("head"), "beasts", z.zone, #z.groups, open)
+                if open then
+                    for _, g in ipairs(shown) do
+                        local c = row("chapter")
+                        card(c, "beast:" .. g.gid, g.name, g.nextNeed and (L["%d/%d slain"]):format(g.kills, g.nextNeed)
+                            or (L["%d slain"]):format(g.kills), #g.entries, g.total, g.nextNeed == nil)
+                        c.bar:SetValue(g.nextNeed and g.kills / g.nextNeed or 1)
+                        if c.diamond then c.chapter = nil end
+                    end
+                    if z.unmet > 0 and filter == "" and not hide then
+                        local c = row("person")
+                        c.key = nil; c:EnableMouse(false)
+                        if c.stripe then c.stripe:Hide() end
+                        c.title:SetText("|cff8f8676" .. (z.unmet == 1 and L["1 more creature to find here"]
+                            or (L["%d more creatures to find here"]):format(z.unmet)) .. "|r")
+                        c.sub:SetText(""); c.sel:Hide()
+                    end
+                end
+            end
+        end
     elseif tab == "attune" then
         for _, a in ipairs(attuneList or {}) do
             local r = row("chapter")
@@ -2530,8 +2890,7 @@ local function renderList()
         local groups, order = {}, {}
         for _, p in ipairs(people) do
             if p.visible then
-                local met = p.list[1] and ns.db.quests[p.list[1]] and ns.db.quests[p.list[1]].zone
-                met = met or (p.list[1] and ns.LoreZone(p.list[1])) or L["Elsewhere"]
+                local met = p.met or (p.list[1] and ns.LoreZone(p.list[1])) or L["Elsewhere"]
                 if not groups[met] then groups[met] = {}; order[#order + 1] = met end
                 table.insert(groups[met], p)
             end
@@ -2625,10 +2984,21 @@ function J.Refresh()
         end
         renderList(); renderDungeon(pick)
         return
+    elseif tab == "beasts" then
+        -- a creature met (and told to this side), else the overview
+        local gid = selected and selected:match("^beast:(.+)$")
+        local B = ns.Bestiary
+        local g = gid and B and B.Group(gid)
+        if not (g and B.Mine(g) and B.Kills(gid) > 0) then gid, g, selected = nil, nil, "beasts" end
+        renderList()
+        if g then renderBeast(gid, g) else renderBeastBook() end
+        return
     elseif tab == "story" and selected == "chronicle" then
         renderList(); renderChronicle(); showBack()
     elseif tab == "story" and selected == "library" then
         renderList(); renderLibrary(); showBack()
+    elseif tab == "story" and selected == "places" then
+        renderList(); renderPlaces(); showBack()
     elseif tab == "story" and selected and selected:match("^area:") then
         renderList(); renderZone(selected:sub(6)); showBack()
     elseif tab == "story" and selected and selected:match("^books:") then
@@ -2700,7 +3070,7 @@ function J.SetTab(which, keepSelection)
     search:SetShown(not shown); listScroll:SetShown(not shown); frame.paper:SetShown(not shown)
     if shown then
         frame.tabStory:SetEnabled(true); frame.tabPeople:SetEnabled(true); frame.tabAttune:SetEnabled(true)
-        frame.tabDungeons:SetEnabled(true)
+        frame.tabDungeons:SetEnabled(true); frame.tabBeasts:SetEnabled(true)
         return
     end
     if which ~= tab and (OWN_LIST[which] or OWN_LIST[tab]) then selected = nil end
@@ -2709,6 +3079,7 @@ function J.SetTab(which, keepSelection)
     frame.tabPeople:SetEnabled(which ~= "people")
     frame.tabAttune:SetEnabled(which ~= "attune")
     frame.tabDungeons:SetEnabled(which ~= "dungeons")
+    frame.tabBeasts:SetEnabled(which ~= "beasts")
     listScroll:SetVerticalScroll(0); pageScroll:SetVerticalScroll(0)
     if not keepSelection then J.Refresh() end
 end
@@ -2729,6 +3100,7 @@ function J.OnVoiceChanged()
     header.recap:SetEnabled(header.recap.anyAudio or by == header.recap)
     header.zone:SetText(by == header.zone and L["Stop"] or L["Play zone story"])
     if person.about then person.about:SetText(by == person.about and L["Stop"] or L["Who are they?"]) end
+    for _, e in ipairs(beast.entries or {}) do e.play:SetText(by == e.play and L["Stop"] or L["Listen"]) end
     for _, r in ipairs(entryRows) do
         r.play:SetText(by == r.play and L["Stop"] or L["Quest"])
         r.recap:SetText(by == r.recap and L["Stop"] or L["Recap"])
@@ -2824,6 +3196,8 @@ local function create()
         frame.tabDungeons = sideTab(frame, "Interface\\Icons\\INV_Misc_Head_Dragon_Black", L["Dungeons & Raids"],
             function() J.SetTab("dungeons") end)
         frame.tabDungeons:SetPoint("TOPLEFT", frame.tabAttune, "BOTTOMLEFT", 0, -4)
+        frame.tabBeasts = sideTab(frame, BEAST_ICON, L["Bestiary"], function() J.ShowBestiary() end)
+        frame.tabBeasts:SetPoint("TOPLEFT", frame.tabDungeons, "BOTTOMLEFT", 0, -4)
         local options = sideTab(frame, "Interface\\Icons\\Trade_Engineering", L["Options"], function() J.SetTab("options") end)
         frame.optionsTab = options
         -- where the options page shows inside the journal
@@ -2834,7 +3208,7 @@ local function create()
         frame:HookScript("OnHide", function()
             if frame.optionsHost:IsShown() or (frame.shareHost and frame.shareHost:IsShown()) then J.SetTab(tab, true) end
         end)
-        options:SetPoint("TOPLEFT", frame.tabDungeons, "BOTTOMLEFT", 0, -22)
+        options:SetPoint("TOPLEFT", frame.tabBeasts, "BOTTOMLEFT", 0, -22)
         local share = sideTab(frame, "Interface\\Icons\\INV_Letter_15", L["Share recordings"], function() J.SetTab("share") end)
         share:SetPoint("TOPLEFT", options, "BOTTOMLEFT", 0, -4)
         frame.shareTab = share
@@ -2842,7 +3216,7 @@ local function create()
         frame.shareHost:SetPoint("TOPLEFT", 70, -40); frame.shareHost:SetPoint("BOTTOMRIGHT", -14, 12)
         frame.shareHost:Hide()
     else
-        frame.tabStory = button(frame, L["The Story"], 100); frame.tabStory:SetPoint("LEFT", frame.titleText, "RIGHT", 24, 0)
+        frame.tabStory = button(frame, L["The Story"], 100); frame.tabStory:SetPoint("LEFT", frame.titleText, "RIGHT", 12, 0)
         frame.tabStory:SetScript("OnClick", function() J.SetTab("story") end)
         frame.tabPeople = button(frame, L["Characters"], 100); frame.tabPeople:SetPoint("LEFT", frame.tabStory, "RIGHT", 4, 0)
         frame.tabPeople:SetScript("OnClick", function() J.SetTab("people") end)
@@ -2850,6 +3224,8 @@ local function create()
         frame.tabAttune:SetScript("OnClick", function() J.SetTab("attune") end)
         frame.tabDungeons = button(frame, L["Dungeons & Raids"], 120); frame.tabDungeons:SetPoint("LEFT", frame.tabAttune, "RIGHT", 4, 0)
         frame.tabDungeons:SetScript("OnClick", function() J.SetTab("dungeons") end)
+        frame.tabBeasts = button(frame, L["Bestiary"], 80); frame.tabBeasts:SetPoint("LEFT", frame.tabDungeons, "RIGHT", 4, 0)
+        frame.tabBeasts:SetScript("OnClick", function() J.ShowBestiary() end)
         local share = button(frame, L["Share recordings"], 130)
         share:SetPoint("TOPRIGHT", -36, -12)
         share:SetScript("OnClick", function() ns.Share.Open() end)
@@ -3045,6 +3421,46 @@ local function create()
         end
     end)
 
+    -- a creature's page (the Bestiary tab): its model in a dark window like a character's, the words beside it
+    beast.window = CreateFrame("Frame", nil, page, "BackdropTemplate")
+    beast.window:SetSize(190, 250); beast.window:SetPoint("TOPLEFT", 0, 0)
+    beast.window:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    beast.window:SetBackdropColor(0.05, 0.04, 0.04, 1)
+    beast.window:SetBackdropBorderColor(0.45, 0.33, 0.16, 1)
+    local bglow = beast.window:CreateTexture(nil, "BACKGROUND", nil, 1)
+    bglow:SetPoint("TOPLEFT", 1, -1); bglow:SetPoint("BOTTOMRIGHT", -1, 1)
+    bglow:SetColorTexture(1, 1, 1, 1)
+    if CreateColor then pcall(bglow.SetGradient, bglow, "VERTICAL", CreateColor(unpack(bottom)), CreateColor(unpack(top))) end
+    beast.model = CreateFrame("PlayerModel", nil, beast.window)
+    beast.model:SetPoint("TOPLEFT", 1, -1); beast.model:SetPoint("BOTTOMRIGHT", -1, 1)
+    beast.icon = beast.window:CreateTexture(nil, "ARTWORK"); beast.icon:SetSize(56, 56); beast.icon:SetPoint("CENTER")
+    beast.icon:SetTexture(BEAST_ICON); beast.icon:SetAlpha(0.6) -- no model for it on this client
+    beast.hint = text(page, "GameFontDisableSmall"); beast.hint:SetPoint("TOP", beast.window, "BOTTOM", 0, -4)
+    beast.hint:SetText(L["Drag to turn  -  scroll to zoom"])
+    beast.name = text(page, "QuestTitleFont", INK_TITLE)
+    beast.where = text(page, "GameFontNormalSmall", INK_SOFT)
+    beast.kills = text(page, "GameFontNormalSmall", INK_SOFT)
+    beast.bar = chronBar(page)
+    local bm = beast.model
+    bm:EnableMouse(true); bm:EnableMouseWheel(true)
+    bm:SetScript("OnMouseDown", function(self)
+        self.dragX, self.dragFacing, self.spin = GetCursorPosition(), self:GetFacing() or 0, false
+    end)
+    bm:SetScript("OnMouseUp", function(self) self.dragX = nil end)
+    bm:SetScript("OnMouseWheel", function(self, d)
+        self.zoom, self.spin = math.max(-0.5, math.min(0.9, (self.zoom or 0) + d * 0.1)), false
+        beastZoom(self)
+    end)
+    bm:SetScript("OnUpdate", function(self, elapsed)
+        if self.dragX then
+            local x = GetCursorPosition()
+            self:SetFacing(self.dragFacing + (x - self.dragX) / 80)
+        elseif self.spin then
+            self:SetFacing((self:GetFacing() or 0) + elapsed * 0.35)
+        end
+        self.facing = self:GetFacing()
+    end)
+
     frame.tabStory:SetEnabled(false)
     frame:Hide()
 end
@@ -3082,6 +3498,26 @@ function J.ShowAttunements(id)
     frame:Show()
     J.SetTab("attune", true)
     if id then selected = "att:" .. id end
+    J.Refresh()
+    pageScroll:SetVerticalScroll(0)
+end
+
+-- Open the journal on the Bestiary tab: at a creature when given (the bestiary's note), else at a land's first
+-- creature met (its land unfolded in the list), else where it was.
+function J.ShowBestiary(zone, gid)
+    if not frame then create() end
+    frame:Show()
+    J.SetTab("beasts", true) -- also away from the Options and Share pages (the selection stays when already here)
+    if gid then
+        selected = "beast:" .. gid
+    elseif zone then
+        selected = "beasts"
+        for _, z in ipairs(beastBook().zones) do
+            if z.zone == zone and z.groups[1] then selected = "beast:" .. z.groups[1].gid end
+        end
+    end
+    local open = ns.char.collapsed and ns.char.collapsed.beasts
+    if zone and open then open[zone] = nil end -- a land you had folded: open again, with it selected
     J.Refresh()
     pageScroll:SetVerticalScroll(0)
 end

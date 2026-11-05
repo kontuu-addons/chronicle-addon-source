@@ -45,6 +45,7 @@ Immersion.lua
 API.lua
 Endings.lua
 Rares.lua
+Bestiary.lua
 Holiday.lua
 Campfire.lua
 Tour.lua

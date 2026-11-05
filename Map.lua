@@ -294,6 +294,8 @@ local function addQuestPins(map, zone)
         seen[q.id] = true
         if flagged(q.id) or inLog(q.id) then return end
         if type(q.t) == "string" and taken[q.t:lower()] then return end
+        -- one of a group of which only one can be done (Little Pamela or Sister Pamela): gone once you took another
+        if ns.Journal and ns.Journal.SiblingTaken and ns.Journal.SiblingTaken(q.id) then return end
         -- a new Forever quest nobody has seen the level of: it may need a higher level, an earlier quest or another
         -- class, so it only shows once the game has offered it to this character
         if not (q.lvl and q.lvl > 0) and ns.IsNew(q.id) and not (ns.char.offered or {})[q.id] then return end

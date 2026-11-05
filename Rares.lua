@@ -36,6 +36,17 @@ function R.Slain(id)
     if ns.Voice.Get(key) then tell(key) end
 end
 
+-- others that count kills too (Bestiary.lua): fn(npc id, guid), for each body seen dead or looted (the same body can
+-- come more than once: dead as your target when the fight ends, then looted)
+R.onKill = {}
+
+local function killed(guid)
+    local id = npcID(guid)
+    if not id then return end
+    R.Slain(id)
+    for _, fn in ipairs(R.onKill) do fn(id, guid) end
+end
+
 -- the unit lies dead, and it was not someone else's kill
 local function checkDead(unit)
     local ok, there = pcall(UnitExists, unit)
@@ -47,7 +58,7 @@ local function checkDead(unit)
         if okTap and denied == true then return end
     end
     local okGuid, guid = pcall(UnitGUID, unit)
-    if okGuid then R.Slain(npcID(guid)) end
+    if okGuid then killed(guid) end
 end
 
 local function onLoot()
@@ -55,7 +66,7 @@ local function onLoot()
     local okN, n = pcall(GetNumLootItems)
     for i = 1, (okN and type(n) == "number" and n or 0) do
         local ok, guid = pcall(GetLootSourceInfo, i)
-        if ok then R.Slain(npcID(guid)) end
+        if ok then killed(guid) end
     end
 end
 

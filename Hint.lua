@@ -95,8 +95,14 @@ local function questOf(owner)
     end
 end
 
-table.insert(ns.onLogin, function()
-    if not (Menu and Menu.ModifyMenu) then return end
+-- Only with the option on: addon code in the tracker's own menu (the one with Abandon Quest) can taint the tracker,
+-- and a tainted tracker can't update its quest item buttons in combat. The likely reason it stopped showing progress
+-- after kills until folded and opened again (thanks Peter, who was abandoning quests). The game can't take a menu
+-- addition back, so once added it stays until the next /reload; with the option off nothing of ours is in there.
+local hooked
+function H.Hook()
+    if hooked or not ns.settings.questHints or not (Menu and Menu.ModifyMenu) then return end
+    hooked = true
     local function add(owner, root)
         local id = questOf(owner)
         if not H.Available(id) then return end
@@ -105,4 +111,5 @@ table.insert(ns.onLogin, function()
     end
     pcall(Menu.ModifyMenu, "MENU_QUEST_MAP_LOG_TITLE", add)
     pcall(Menu.ModifyMenu, "MENU_QUEST_OBJECTIVE_TRACKER", add)
-end)
+end
+table.insert(ns.onLogin, H.Hook)

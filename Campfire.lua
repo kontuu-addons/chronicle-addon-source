@@ -1,7 +1,8 @@
--- Chronicle / Campfire: sit down by a camp fire (WoW: Forever's camping) and the narrator tells one of the zone's
--- campfire tales in the speaker window, the next one you haven't heard each time, and once you've heard them all a
--- legend of Azeroth. Near a fire whose zone has a tale you haven't heard, a short note says so and the minimap book
--- glows. The countdown and the camp's benefits are the game's own buffs. /sing by the fire: your character hums.
+-- Chronicle / Campfire: sit down by a camp fire (WoW: Forever's camping) and a small note offers one of the zone's
+-- campfire tales, the next one you haven't heard each time, and once you've heard them all a legend of Azeroth; the
+-- narrator tells it when you click Listen, and nothing plays by itself. Near a fire whose zone has a tale you haven't
+-- heard, a short note says so and the minimap book glows. The countdown and the camp's benefits are the game's own
+-- buffs. /sing by the fire: your character hums.
 local _, ns = ...
 local L = ns.L
 local C = {}
@@ -54,18 +55,34 @@ local function nextLegend()
     end
 end
 
-local seated, pending, near, hint, hintAgain
+local seated, pending, near, hint, hintAgain, offered
 
 -- the minimap book's golden ring and camp fire (Minimap.lua), while a fire with a tale still to hear is near
 local function ring(on) if ns.Minimap and ns.Minimap.SetCampfire then ns.Minimap.SetCampfire(on) end end
 
+-- seated a few seconds: a small note offers the next tale, told only when you click Listen (the user, 2026-11-05: "i
+-- also liked the campfire that we had before. where we select if we wanna hear, and it only spoke 1. now when i afk
+-- at campfire it just continues talking": the waiting buff comes and goes while you rest, and every return was a new
+-- sitting that told the next tale). The same tale isn't offered again until you have left the fire.
 local function tell()
     pending = nil
     if not (seated and ns.settings.campfire) or ns.settings.journalOnly then return end
     if InCombatLockdown() or ns.Voice.Paused() then return end -- paused: the tale waits for the next sit-down
-    local key = unheardTale() or nextLegend()
-    if not key then return end
-    if ns.Voice.Enqueue(key) then ring(false) end -- after whoever is talking now; Voice marks it heard once it starts
+    if not (ns.Reminder and ns.Reminder.ShowStory) then return end
+    local key, zone = unheardTale()
+    local title = zone and ns.zoneLocal(zone)
+    if not key then
+        key = nextLegend()
+        for _, e in ipairs((key and ns.Lore and ns.Lore.legends) or {}) do
+            if "legend:" .. e.id == key then title = e.title end
+        end
+    end
+    if not key or key == offered then return end
+    offered = key
+    -- Listen tells it (after whoever is talking now; Voice marks it heard once it starts); Journal: the zone's page
+    ns.Reminder.ShowStory((L["By the fire: %s"]):format(title or ""), ns.Voice.Subtitle(key), { key },
+        zone and function() ns.Journal.Open("area:" .. zone) end or nil)
+    ring(false)
 end
 
 -- the note, in the game's zone name style: above the zone name, fading in and out on its own
@@ -105,6 +122,7 @@ ev:SetScript("OnEvent", function()
     if seated and hint and hint:IsShown() then hint:Hide() end -- sat down: the note did its job
     -- on a flight or as a ghost you can't sit down: no note and no glow, and a fire counts as new once you can
     local close = nearby() and not UnitOnTaxi("player") and not UnitIsDeadOrGhost("player")
+    if not (close or now) then offered = nil end -- left the fire: the next one offers its tale again
     -- a tale still to hear here, once per event (its own statement: inside "and" a call gives only its first value)
     local zone
     if close and not ns.settings.journalOnly then zone = select(2, unheardTale()) end
