@@ -109,6 +109,9 @@ local function getToast()
     return t
 end
 
+-- a note is up (the bestiary waits for it to go: a new note would take its place)
+function R.Busy() return toast ~= nil and toast:IsShown() end
+
 function R.Show(zone)
     local keys, titles = recentRecaps(zone, 3)
     if #keys == 0 then return false end
@@ -179,6 +182,8 @@ function R.ShowWelcome(zone)
     local t = getToast()
     local key = "zone:" .. zone
     t.keys, t.full = { key }, text
+    -- the zone's own page, where this welcome stays to read again (it was gone once closed; thanks emmaloui)
+    t.open = function() ns.Journal.Open("area:" .. zone) end
     local voiced = ns.Voice.Get(key) ~= nil and not ns.settings.journalOnly
     t.listen:SetShown(voiced)
     t.journal:ClearAllPoints()

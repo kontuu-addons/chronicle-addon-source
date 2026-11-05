@@ -26,6 +26,8 @@ local ON_CHANGE = {
     showLeft = function() if ns.Map then ns.Map.Refresh() end if ns.Journal then ns.Journal.Refresh() end end,
     hideUnfound = function() if ns.Map then ns.Map.Refresh() end if ns.Journal then ns.Journal.Refresh() end end,
     questMarkers = function() if ns.Map then ns.Map.Refresh() end end,
+    questHints = function() if ns.Hint then ns.Hint.Hook() end end, -- the quest menus' Hint, only once it's on
+    -- (with it off nothing of ours is in the tracker's menu: see Hint.lua)
     muteGameGreetings = function() ns.ApplyGreetingMute() end,
     greetings = function() ns.ApplyGreetingMute() end,
     journalOnly = function() ns.SetJournalOnly(ns.settings.journalOnly) end,
@@ -36,7 +38,7 @@ local ON_CHANGE = {
 local MORE = {
     bgVoices = true,
     questEndsGreeting = true, ["Greet me again after"] = true, mixedSure = true, ghostQuips = true, reactions = true,
-    fishingLines = true, rareLines = true,
+    fishingLines = true, rareLines = true, bestiary = true,
     lockSpeaker = true, bigSubtitles = true, skipHeard = true, stopOnClose = true, muteGameGreetings = true,
     ttsFallback = true, speakerStays = true,
     chroniclePause = true, zoneRecap = true, logStory = true, tips = true, levelMilestones = true, flightStory = true,
@@ -235,6 +237,7 @@ local function build()
     box("ghostQuips", L["A word on the way back"], L["When you run back to your body as a ghost, the narrator now and then says a short line. At most once every 15 minutes."])
     box("fishingLines", L["A word while fishing"], L["When you cast your fishing line, the narrator now and then says a short line. At most once every 15 minutes."])
     box("rareLines", L["Famous rares"], L["The first time you slay a famous rare that has a real story, the narrator tells it once the fight is over."])
+    box("bestiary", L["Bestiary"], L["The first time you slay one of a land's notable creatures (the Burning Blade, kobolds, scorpids...), someone who lives there tells what they know of them, and more as you slay more. A small note offers it once the fight is over. Nothing plays unless you click Listen."])
     box("reactions", L["My character reacts"], L["Now and then your own character says a short line after handing in a quest, in a voice for your race and gender."])
 
     section(L["While talking"])

@@ -85,6 +85,9 @@ local function about(key)
             if a.id == id then return (L["Chapter: %s"]):format(a.title) end
         end
         return L["Chapter"]
+    elseif kind == "beast" then
+        local g = ns.Bestiary and ns.Bestiary.Group(id:match("^(.-):%d+$") or id)
+        return g and (L["Bestiary: %s"]):format(g.name) or L["Bestiary"]
     end
     return ""
 end
@@ -124,6 +127,7 @@ local function create()
 
     -- portrait window: dark inset with a thin gold rim
     f.window = CreateFrame("Frame", nil, f, "BackdropTemplate")
+    f.faded = false -- the whole interface faded out (OnUpdate): the portrait goes with it
     f.window:SetSize(84, 84)
     f.window:SetPoint("TOPLEFT", 10, -34) -- arrange() places it under the head
     f.window:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
@@ -460,6 +464,14 @@ local function create()
         f.about:SetText(f.aboutText .. (#pages > 1 and ("  |cff9d9d9d%d/%d|r"):format(page, #pages) or ""))
     end
     f:SetScript("OnUpdate", function(self)
+        -- a 3D model does not fade with its window: with the whole interface faded out (DialogueUI's Hide UI while you
+        -- talk to an NPC) the portrait floated alone over the world (thanks Sideclick). It goes and comes with the window.
+        local alpha = self.GetEffectiveAlpha and self:GetEffectiveAlpha()
+        local faded = type(alpha) == "number" and alpha < 0.05
+        if faded ~= (self.faded or false) then
+            self.faded = faded
+            self.window:SetShown(not (self.cine or self.compact or faded))
+        end
         if current and startedAt then
             local done = math.min(1, (GetTime() - startedAt) / math.max(current.d or 1, 0.1))
             self.progress:SetValue(done)
@@ -490,7 +502,7 @@ local function arrange(compact)
     f:SetWidth(cine and 640 or compact and 330 or 440)
     local inset = cine and 50 or PAD
     for _, r in ipairs({ f.name, f.about, f.sub, f.progress, f.player }) do r:ClearAllPoints() end
-    f.window:SetShown(not (cine or compact))
+    f.window:SetShown(not (cine or compact or f.faded))
     local just = cine and "CENTER" or "LEFT"
     f.name:SetJustifyH(just); f.about:SetJustifyH(just); f.sub:SetJustifyH(just)
     -- the head: the name (the title follows it on the same line, placed in T.Show); the X sits in the corner

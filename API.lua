@@ -39,6 +39,8 @@ local function allowed(key)
     if sum then return completed(sum) end
     local rare = tonumber(key:match("^rare:(%d+)$"))
     if rare then return ((ns.char and ns.char.rares) or {})[rare] ~= nil end -- a famous rare's story, once slain
+    local beast, entry = key:match("^beast:(.+):(%d+)$")
+    if beast then return ns.Bestiary ~= nil and ns.Bestiary.Unlocked(beast, tonumber(entry)) end -- once opened by kills
     local arc = key:match("^arc:(.+)$")
     if arc then
         for _, k in ipairs(ns.Journal.ZoneStoryKeys(arcZone(arc) or "")) do if k == key then return true end end
