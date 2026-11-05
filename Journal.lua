@@ -83,8 +83,10 @@ end
 
 -- Show what's left (option): the quests of a chapter this character has not done or started yet and can take, in
 -- the chapter's order, by name, level and giver. Never any story text.
--- a quest picked by profession ("Camping 101: Mining"): never missing, only shown once done
-local function optional(id) return (lore().optional or {})[id] end
+-- a quest picked by profession ("Camping 101: Mining"), or a breadcrumb that only points the way to another quest and
+-- is gone once that one is taken (Rejold's New Brew, which could only be had by abandoning Shimmer Stout: thanks to a
+-- player on CurseForge): never missing, only counted and shown once taken
+local function optional(id) return (lore().optional or {})[id] or (lore().breadcrumb or {})[id] end
 
 -- one of a group of which only one can be done (Lore "exclusive": Call of Fire from four trainers, Little Pamela or
 -- Sister Pamela): out of reach once another of its group is done or in your quest log
@@ -124,8 +126,8 @@ local function neverMine(id)
 end
 
 -- How many steps a chapter has for this character: every quest done or taken, and of the rest those it can still
--- take. A profession quest counts once taken, another side's or class's never, and a group of which only one can be
--- done is one step (thanks Azerail: the Valley of Trials could never be finished)
+-- take. A profession quest or a breadcrumb counts once taken, another side's or class's never, and a group of which
+-- only one can be done is one step (thanks Azerail: the Valley of Trials could never be finished)
 function J.ChapterTotal(quests)
     local c, ex = ns.char, lore().exclusive or {}
     local total, taken, open = 0, {}, {}
