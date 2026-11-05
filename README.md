@@ -12,7 +12,7 @@ Just the journal, without voices: [Chronicle: Story Journal](https://www.cursefo
 
 ## Bugs and ideas
 
-Open an issue here, or come by the [Chronicle Discord](https://discord.gg/NKevry7mY). If you can, include the quest or NPC, what you expected and what happened, and any Lua error (BugSack makes these easy to copy).
+Open an issue here, or come by the [Chronicle Discord](https://discord.gg/RPJFk8VAhn). If you can, include the quest or NPC, what you expected and what happened, and any Lua error (BugSack makes these easy to copy).
 
 Small fixes are welcome as pull requests.
 
