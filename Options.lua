@@ -340,7 +340,7 @@ local function build()
         b:SetScript("OnLeave", function(self) self.text:SetTextColor(1, 0.82, 0) end)
         return b
     end
-    link("Discord", "discord.gg/NKevry7mY"):SetPoint("RIGHT", footer, "CENTER", -12, 0)
+    link("Discord", "discord.gg/RPJFk8VAhn"):SetPoint("RIGHT", footer, "CENTER", -12, 0)
     link("Ko-fi", "ko-fi.com/kontuu"):SetPoint("LEFT", footer, "CENTER", 12, 0)
 
     -- every option back to how it came, after a yes; the journal, what you've heard and where windows sit stay

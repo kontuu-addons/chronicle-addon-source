@@ -64,30 +64,75 @@ end
 
 -- the one speaking, if they're on screen as your target, mouseover, focus or a nameplate: whether a man or a woman
 -- (guards and some enemies come as both, with a voice for each)
-local function speakerSexOf(guid)
-    if not guid or (canaccessvalue and not canaccessvalue(guid)) then return nil end
+local function readableSex(unit)
+    local ok, sex = pcall(UnitSex, unit)
+    if ok and type(sex) == "number" and not (canaccessvalue and not canaccessvalue(sex)) then return sex end
+end
+
+local function speakerSexOf(guid, speaker)
     local units = { "target", "mouseover", "focus", "targettarget", "softenemy", "softinteract", "pettarget",
         "party1target", "party2target", "party3target", "party4target" }
-    if UnitTokenFromGUID then -- the game's own lookup, when it knows the speaker as a unit
-        local ok, token = pcall(UnitTokenFromGUID, guid)
-        if ok and type(token) == "string" then table.insert(units, 1, token) end
-    end
     if C_NamePlate and C_NamePlate.GetNamePlates then
         for _, plate in ipairs(C_NamePlate.GetNamePlates() or {}) do
             if plate.namePlateUnitToken then units[#units + 1] = plate.namePlateUnitToken end
         end
     end
-    for _, unit in ipairs(units) do
-        local ok, same = pcall(function() return UnitGUID(unit) == guid end)
-        if ok and same then
-            local ok2, sex = pcall(UnitSex, unit)
-            if ok2 and not (canaccessvalue and not canaccessvalue(sex)) then return sex end
+    local known = type(guid) == "string" and not (canaccessvalue and not canaccessvalue(guid))
+    local hidden = not known -- the game kept the ids from us (in a fight), so units can't be told apart by them
+    if known then
+        if UnitTokenFromGUID then -- the game's own lookup, when it knows the speaker as a unit
+            local ok, token = pcall(UnitTokenFromGUID, guid)
+            if ok and type(token) == "string" then table.insert(units, 1, token) end
         end
+        for _, unit in ipairs(units) do
+            local ok, readable, same = pcall(function()
+                local g = UnitGUID(unit)
+                if g == nil then return true, false end
+                if canaccessvalue and not canaccessvalue(g) then return false, false end
+                return true, g == guid
+            end)
+            if not (ok and readable) then
+                hidden = true
+            elseif same then
+                local sex = readableSex(unit)
+                if sex then return sex end
+            end
+        end
+    end
+    -- with the ids hidden (the Scarlet Zealots' battle cries all came in the woman's voice, the one the data lists
+    -- first): the units on screen with the speaker's name. One sex among them is the answer; with both, the one
+    -- that has you as its target. (With the ids readable and no match, the speaker isn't on screen: no name check,
+    -- another one of the same name would answer for them.)
+    if hidden then
+        local sexes, onMe = {}, {}
+        for _, unit in ipairs(units) do
+            local ok, same = pcall(function() return ns.clean(UnitName(unit)) == speaker end)
+            local sex = ok and same and readableSex(unit)
+            if sex == 2 or sex == 3 then
+                sexes[sex] = true
+                local ok2, mine = pcall(UnitIsUnit, unit .. "target", "player")
+                if ok2 and (not canaccessvalue or canaccessvalue(mine)) then
+                    if mine then onMe[sex] = true end
+                end
+            end
+        end
+        local function onlyOne(t)
+            local found
+            for s in pairs(t) do
+                if found then return nil end
+                found = s
+            end
+            return found
+        end
+        local sex = onlyOne(onMe) or onlyOne(sexes)
+        if sex then return sex end
     end
     -- not on screen (often in a fight): a man or a woman by the speaker's own id, so a pack of thugs doesn't all
     -- shout in the voice the data lists first, and each one keeps the same voice (thanks Lukey_Q)
-    local ok, last = pcall(function() return tonumber(guid:sub(-1), 16) end)
-    if ok and last then return last % 2 == 0 and 2 or 3, true end
+    if known then
+        local ok, last = pcall(function() return tonumber(guid:sub(-1), 16) end)
+        if ok and last then return last % 2 == 0 and 2 or 3, true end
+    end
     return math.random(2, 3), true
 end
 
@@ -123,7 +168,11 @@ ev:SetScript("OnEvent", function(_, event, text, speaker, _, _, target, _, _, _,
     end
     if not ns.Voice.Get(key) then return end
     if lastPlayed[key] and GetTime() - lastPlayed[key] < REPEAT_AFTER then return end
-    local sex, guessed = speakerSexOf(guid)
+    local sex, guessed = speakerSexOf(guid, speaker)
+    if ns.settings.debug then
+        ns.pr(("debug: %s is %s%s"):format(speaker, sex == 2 and "a man" or sex == 3 and "a woman" or "?",
+            guessed and " (a guess)" or ""))
+    end
     -- option: someone who comes as a man or a woman, and the addon can't see which one this is: stay quiet
     if guessed and ns.settings.mixedSure and (ns.audio[key .. ":m"] or ns.audio[key .. ":w"]) then return end
     lastPlayed[key] = GetTime()
