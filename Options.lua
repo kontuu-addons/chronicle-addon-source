@@ -13,7 +13,7 @@ local function volCvar() local _, ch = ns.Voice.Channel() return ch.vol end
 -- addon code while doing it, which taints the gamepad UI. With a controller every action bar update is then blocked
 -- ("blocked action", the game hangs). Here the window has nothing of ours to save; each box saves itself when clicked.
 local GREYED = { -- off while "Journal only" is on
-    voice = true, recapAfterTurnIn = true, greetings = true, books = true, worldSpeech = true, ghostQuips = true,
+    voice = true, recapAfterTurnIn = true, greetings = true, books = true, worldSpeech = true, tongues = true, ghostQuips = true,
     fishingLines = true, rareLines = true, reactions = true, speaker = true, subtitles = true, bigSubtitles = true, skipHeard = true, stopOnClose = true,
     muteGameGreetings = true, ttsFallback = true, checkVoices = true, speakerPlayer = true, questEndsGreeting = true,
     campfire = true,
@@ -26,8 +26,8 @@ local ON_CHANGE = {
     showLeft = function() if ns.Map then ns.Map.Refresh() end if ns.Journal then ns.Journal.Refresh() end end,
     hideUnfound = function() if ns.Map then ns.Map.Refresh() end if ns.Journal then ns.Journal.Refresh() end end,
     questMarkers = function() if ns.Map then ns.Map.Refresh() end end,
-    questHints = function() if ns.Hint then ns.Hint.Hook() end end, -- the quest menus' Hint, only once it's on
-    -- (with it off nothing of ours is in the tracker's menu: see Hint.lua)
+    questHints = function() if ns.Hint then ns.Hint.Hook() end end, -- the quest log menu's Hint, only once it's on
+    -- (nothing of ours is ever in the quest tracker: see Hint.lua)
     muteGameGreetings = function() ns.ApplyGreetingMute() end,
     greetings = function() ns.ApplyGreetingMute() end,
     journalOnly = function() ns.SetJournalOnly(ns.settings.journalOnly) end,
@@ -37,7 +37,8 @@ local ON_CHANGE = {
 -- players never need. Keys of checkboxes, or a slider's label.
 local MORE = {
     bgVoices = true,
-    questEndsGreeting = true, ["Greet me again after"] = true, mixedSure = true, ghostQuips = true, reactions = true,
+    questEndsGreeting = true, ["Greet me again after"] = true, mixedSure = true, tongues = true, ghostQuips = true,
+    reactions = true,
     fishingLines = true, rareLines = true, bestiary = true,
     lockSpeaker = true, bigSubtitles = true, skipHeard = true, stopOnClose = true, muteGameGreetings = true,
     ttsFallback = true, speakerStays = true,
@@ -234,6 +235,7 @@ local function build()
     box("books", L["Read books and letters"], L["The narrator reads the page you open. Turning the page reads the next one."])
     box("worldSpeech", L["NPCs talking in the world"], L["Speech bubbles and yells, like guards, villains and mobs. Only when nothing else is talking, and not the same line twice within two minutes."])
     box("mixedSure", L["Quiet when unsure of man or woman"], L["Some enemies come as both men and women, like Defias and Twilight Thugs. When the addon can't see which one is talking (often in a fight), it picks a voice. Tick to stay quiet instead. Enemy nameplates help it see them."])
+    box("tongues", L["Languages you don't know"], L["NPCs who speak a language your character doesn't know, like the Scarlet Crusade to the Horde or Blackrock orcs to the Alliance, stay silent. Tick to hear them say the scrambled words the game shows."])
     box("ghostQuips", L["A word on the way back"], L["When you run back to your body as a ghost, the narrator now and then says a short line. At most once every 15 minutes."])
     box("fishingLines", L["A word while fishing"], L["When you cast your fishing line, the narrator now and then says a short line. At most once every 15 minutes."])
     box("rareLines", L["Famous rares"], L["The first time you slay a famous rare that has a real story, the narrator tells it once the fight is over."])
@@ -298,7 +300,7 @@ local function build()
     section(L["Map"])
     box("storyPanel", L["Story panel on the world map"], L["A small panel on a zone's map with its chapters and how far you are, with Play story. On the continent map, hover a zone to see how much of its story you've found."])
     box("mapPins", L["Story chapters on the world map"], L["A book at the quest giver of each chapter you have started. Click it to open the chapter."])
-    box("questHints", L["Quest hints"], L["For playing with the map's quest objectives off: right-click a quest in the quest log or the tracker and choose Hint, or press Hint beside the story so far, and the map shows where that one quest's objectives are. Everything goes back as it was when you close the map."])
+    box("questHints", L["Quest hints"], L["For playing with the map's quest objectives off: right-click a quest in the quest log and choose Hint, or press Hint beside the story so far, and the map shows where that one quest's objectives are. Everything goes back as it was when you close the map."])
     box("questMarkers", L["Quest givers on the map"], L["Shows ! where a quest giver has quests for you right now (the game itself shows ? where to hand in). Turns itself off while Questie is running, which already shows these."])
     box("minimap", L["Minimap button"], L["Left-click opens the journal, right-click the options. Drag to move it around the minimap."])
     box("minimapFree", L["Detach the button from the minimap"], L["The book button can go anywhere on the screen, for example next to your action bars. Drag it where you want it."])

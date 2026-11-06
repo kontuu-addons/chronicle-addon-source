@@ -17,7 +17,8 @@ function S.Key(speaker, text)
     if not list then return nil end
     local shown = norm(text)
     for _, item in ipairs(list) do
-        if shown:find(" " .. item[2] .. " ", 1, true) then return item[1] end
+        -- a line in a language you don't know plays only with that option on (Voice.Tongue)
+        if shown:find(" " .. item[2] .. " ", 1, true) then return ns.Voice.Tongue(item[1]) end
     end
 end
 

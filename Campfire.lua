@@ -81,7 +81,7 @@ local function tell()
     offered = key
     -- Listen tells it (after whoever is talking now; Voice marks it heard once it starts); Journal: the zone's page
     ns.Reminder.ShowStory((L["By the fire: %s"]):format(title or ""), ns.Voice.Subtitle(key), { key },
-        zone and function() ns.Journal.Open("area:" .. zone) end or nil)
+        zone and function() ns.Journal.Open("area:" .. zone) end or nil, nil, "campfire")
     ring(false)
 end
 
@@ -159,14 +159,20 @@ function C.Hum()
     return true
 end
 
--- the game's own /sing emote (it came with Wrath, so Forever may not have it): hum along. Without it, our own /sing.
+-- the game's own /sing emote (WoW: Forever has it): hum along. Its chat box sends a typed emote through
+-- C_ChatInfo.PerformEmote, and DoEmote is only an old name that calls it, so following DoEmote alone never heard a
+-- typed /sing (the user 2026-11-06: "/sing doesnt work btw in campfire"). Without the emote, our own /sing: the game
+-- looks at addons' slash commands before its emotes, so ours would take /sing from the game's emote where it has one.
 table.insert(ns.onLogin, function()
     local known = false
     for i = 1, (type(MAXEMOTEINDEX) == "number" and MAXEMOTEINDEX or 1000) do
         if _G["EMOTE" .. i .. "_TOKEN"] == "SING" then known = true; break end
     end
-    if known and DoEmote then
-        hooksecurefunc("DoEmote", function(token) if token == "SING" then C.Hum() end end)
+    local function onEmote(token) if token == "SING" then C.Hum() end end
+    if known and C_ChatInfo and C_ChatInfo.PerformEmote then
+        hooksecurefunc(C_ChatInfo, "PerformEmote", onEmote)
+    elseif known and DoEmote then
+        hooksecurefunc("DoEmote", onEmote)
     else
         SLASH_CHRONICLESING1 = "/sing"
         SlashCmdList.CHRONICLESING = function() C.Hum() end

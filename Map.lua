@@ -359,8 +359,6 @@ local function startedChapters()
 end
 
 local function zoneStory(zone, started)
-    local side = (UnitFactionGroup("player") or ""):sub(1, 1)
-    local classBit = 2 ^ ((select(3, UnitClass("player")) or 1) - 1)
     started = started or startedChapters()
     local s = { zone = zone, chapters = {}, hidden = 0, done = 0 }
     for _, a in ipairs(zoneArcs(zone)) do
@@ -368,15 +366,16 @@ local function zoneStory(zone, started)
         if ch then
             s.chapters[#s.chapters + 1] = { ch = ch, arc = a }
             if ch.done >= (ch.total or #ch.entries) then s.done = s.done + 1 end
-        elseif (not a.side or a.side == side) and (not a.cls or bit.band(a.cls, classBit) ~= 0)
-            and ns.Journal.ArcForMyRace(a) then
-            s.hidden = s.hidden + 1
-            -- Show what's left: where each undiscovered chapter starts (lowest level first)
-            -- (only what you can take now or soon: a level 55 chain in Brill isn't for a level 10 character)
-            if ns.settings.showLeft then
-                local first = ns.Journal.StillToDo(a.quests)[1]
-                local need = first and (first.min and first.min > 0 and first.min or first.lvl) or 0
-                if first and need <= (UnitLevel("player") or 1) + 2 then
+        elseif ns.Journal.ArcForMe(a) then
+            -- a chapter not found yet counts as the journal counts it: only with a quest this character can take
+            -- (thanks Azerail: Kamari's leatherworking quest showed as a chapter to discover to everyone)
+            local first = ns.Journal.StillToDo(a.quests)[1]
+            if first then
+                s.hidden = s.hidden + 1
+                -- Show what's left: where each undiscovered chapter starts (lowest level first)
+                -- (only what you can take now or soon: a level 55 chain in Brill isn't for a level 10 character)
+                local need = first.min and first.min > 0 and first.min or first.lvl or 0
+                if ns.settings.showLeft and need <= (UnitLevel("player") or 1) + 2 then
                     s.starts = s.starts or {}; table.insert(s.starts, first)
                 end
             end
@@ -451,24 +450,19 @@ function ChronicleNextPinMixin:OnClick(button)
     ns.Journal.Open(self.step.ch.key)
 end
 
--- the next quest of each started, unfinished chapter: its giver, if it stands in this zone and you can take it now
+-- the next quest of each started, unfinished chapter: its giver, if it stands in this zone. What is left goes by the
+-- journal's rules: nothing once the chapter is finished or while one of its quests is in your log, and only a quest
+-- this character can take, not another class's or race's, a profession's own or a breadcrumb (thanks Azerail: a
+-- warlock's finished Burning Blade still pointed at Zureetha's Vile Familiars, which Ruzan gives warlocks instead)
 local function addNextPins(map, s)
     local l = ns.Lore or {}
     for _, c in ipairs(s.chapters) do
-        local state = {}
-        for _, e in ipairs(c.ch.entries) do state[e.id] = e.state end
-        local busy = false
+        local busy = c.ch.done >= (c.ch.total or #c.ch.entries)
         for _, e in ipairs(c.ch.entries) do if e.state == "active" then busy = true end end
-        if not busy then
-            for _, q in ipairs(c.arc.quests or {}) do
-                if not state[q] and not flagged(q) then
-                    local at = ns.StepAt(q)
-                    if at and l.stepZones[at[1]] == s.zone then
-                        acquire(NTEMPLATE, { ch = c.ch, who = personName(q, "giverOf") }, at[2] / 100, at[3] / 100)
-                    end
-                    break
-                end
-            end
+        local q = not busy and ns.Journal.StillToDo(c.arc.quests)[1]
+        local at = q and ns.StepAt(q.id)
+        if at and l.stepZones[at[1]] == s.zone then
+            acquire(NTEMPLATE, { ch = c.ch, who = personName(q.id, "giverOf") }, at[2] / 100, at[3] / 100)
         end
     end
 end

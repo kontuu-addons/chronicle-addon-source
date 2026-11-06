@@ -9,6 +9,39 @@ local AWAY = 30 * 60   -- seconds away before a zone counts as "returning"
 local SHOW_FOR = 25    -- seconds the toast stays up (longer while the mouse is over it)
 local toast
 
+-- Each kind of note by its box in the options (Options.lua), the one its "Don't show these" unticks
+local OPTION = {
+    zoneRecap = "\"Previously in...\" reminders", zoneIntro = "Welcome to new zones",
+    flightStory = "The story on flights", bestiary = "Bestiary", campfire = "By the fire",
+    levelMilestones = "Level milestones", shareNudge = "Remind me to share new quests",
+}
+
+-- "Don't show these" (the user, 2026-11-06: people click away the notes, "Previously in" and the bestiary's): that kind
+-- of note is off, and the chat says where to turn it back on. What the notes offered stays in the journal.
+function R.TurnOff(kind)
+    if not OPTION[kind] then return end
+    if ns.Options and ns.Options.Set then ns.Options.Set(kind, false) else ns.settings[kind] = false end
+    if kind == "zoneRecap" then -- the same box has the dungeon notes (entering one, and its end)
+        ns.pr((L["\"Previously in...\" and dungeon notes are off now. To get them back, tick %s in /lore options."]):format(L[OPTION[kind]]))
+    else
+        ns.pr((L["these notes are off now. To get them back, tick \"%s\" in /lore options."]):format(L[OPTION[kind]]))
+    end
+end
+
+-- The link in a note's foot (the note is a strip taller while it shows); t.kind says what it turns off.
+function R.AddOffLink(t)
+    local b = CreateFrame("Button", nil, t)
+    b:SetNormalFontObject("GameFontDisableSmall")
+    b:SetHighlightFontObject("GameFontHighlightSmall")
+    b:SetText(L["Don't show these"])
+    local fs = b:GetFontString()
+    b:SetSize(math.max(80, (fs and fs:GetStringWidth() or 0) + 6), 14)
+    b:SetPoint("BOTTOMRIGHT", -10, 5)
+    b:SetScript("OnClick", function() t:Hide(); R.TurnOff(t.kind) end)
+    t.off = b
+    return b
+end
+
 local function questZone(id, e)
     local q = ns.db.quests[id] or {}
     return q.zone or ns.LoreZone(id) or e.zone
@@ -63,7 +96,8 @@ local function getToast()
     t:EnableMouse(true)
 
     local icon = t:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(40, 40); icon:SetPoint("LEFT", 10, 0)
+    -- from the top, so a note with "Don't show these" grows only at its foot
+    icon:SetSize(40, 40); icon:SetPoint("TOPLEFT", 10, -17)
     icon:SetTexture("Interface\\Icons\\INV_Misc_Book_09")
     t.title = t:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     t.title:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, 0); t.title:SetPoint("RIGHT", -28, 0); t.title:SetJustifyH("LEFT")
@@ -90,6 +124,7 @@ local function getToast()
     t.history:Hide()
     local close = CreateFrame("Button", nil, t, "UIPanelCloseButton")
     close:SetSize(24, 24); close:SetPoint("TOPRIGHT", 0, 0)
+    R.AddOffLink(t)
 
     t:SetScript("OnUpdate", function(self)
         if self:IsMouseOver() then self.hideAt = GetTime() + 5 end
@@ -112,6 +147,17 @@ end
 -- a note is up (the bestiary waits for it to go: a new note would take its place)
 function R.Busy() return toast ~= nil and toast:IsShown() end
 
+-- Up it goes for secs, with "Don't show these" in its foot when its kind of note has a box in the options.
+local function present(t, kind, secs)
+    kind = OPTION[kind] and kind or nil
+    t.kind = kind
+    t.off:SetShown(kind ~= nil)
+    t:SetHeight(kind and 88 or 74)
+    t.hideAt = GetTime() + secs
+    t:Show()
+    return true
+end
+
 function R.Show(zone)
     local keys, titles = recentRecaps(zone, 3)
     if #keys == 0 then return false end
@@ -122,14 +168,13 @@ function R.Show(zone)
     t.title:SetText((L["Previously in %s"]):format(ns.zoneLocal(zone)))
     local last = titles[#titles]
     t.sub:SetText(last and (L["Last: %s"]):format(last) or (L["%d recaps"]):format(#keys))
-    t.hideAt = GetTime() + SHOW_FOR
-    t:Show()
-    return true
+    return present(t, "zoneRecap", SHOW_FOR)
 end
 
 -- A story moment worth its own note: a zone's epilogue, a dungeon's ending. Listen plays keys; hover shows text.
 -- open: what the Journal button opens (default: the journal as it was). line: shown in place of the text's start.
-function R.ShowStory(title, text, keys, open, line)
+-- kind: the setting this note comes under (it gets "Don't show these"), when it has a box in the options.
+function R.ShowStory(title, text, keys, open, line, kind)
     local t = getToast()
     t.keys, t.full, t.open = keys, text, open
     local voiced = keys[1] and ns.Voice.Get(keys[1]) ~= nil and not ns.settings.journalOnly
@@ -139,9 +184,7 @@ function R.ShowStory(title, text, keys, open, line)
     else t.journal:SetPoint("TOPLEFT", t.sub, "BOTTOMLEFT", -2, -6) end
     t.title:SetText(title)
     t.sub:SetText(line or text or "")
-    t.hideAt = GetTime() + SHOW_FOR * 2
-    t:Show()
-    return true
+    return present(t, kind, SHOW_FOR * 2)
 end
 
 -- Entering a dungeon or raid: offer its welcome and the narrator's chapter intros for it (once per visit).
@@ -153,7 +196,7 @@ function R.ShowDungeon(zone)
         for _, a in ipairs((ns.Lore and ns.Lore.arcs) or {}) do
             if a.zone == zone and ns.Voice.Get("arc:" .. a.id) and #keys < 3 then keys[#keys + 1] = "arc:" .. a.id end
         end
-        return R.ShowStory((L["Entering %s"]):format(ns.zoneLocal(zone)), intro, keys)
+        return R.ShowStory((L["Entering %s"]):format(ns.zoneLocal(zone)), intro, keys, nil, nil, "zoneRecap")
     end
     local keys, first = {}, nil
     for _, a in ipairs((ns.Lore and ns.Lore.arcs) or {}) do
@@ -170,13 +213,12 @@ function R.ShowDungeon(zone)
     t.journal:ClearAllPoints(); t.journal:SetPoint("LEFT", t.listen, "RIGHT", 6, 0)
     t.title:SetText((L["Entering %s"]):format(ns.zoneLocal(zone)))
     t.sub:SetText(first or "")
-    t.hideAt = GetTime() + SHOW_FOR
-    t:Show()
-    return true
+    return present(t, "zoneRecap", SHOW_FOR)
 end
 
 -- First time in a zone: the narrator's short introduction to it (nothing plays unless you click Listen).
-function R.ShowWelcome(zone)
+-- asked: /lore welcome, so no "Don't show these" on it.
+function R.ShowWelcome(zone, asked)
     local text = ns.Lore and ns.Lore.zoneIntro and ns.Lore.zoneIntro[zone]
     if not text then return false end
     local t = getToast()
@@ -196,9 +238,7 @@ function R.ShowWelcome(zone)
     t.history:SetShown(voiced and ns.Voice.Get(t.historyKey) ~= nil)
     t.title:SetText((L["Welcome to %s"]):format(ns.zoneLocal(zone)))
     t.sub:SetText(text)
-    t.hideAt = GetTime() + SHOW_FOR
-    t:Show()
-    return true
+    return present(t, not asked and "zoneIntro" or nil, SHOW_FOR)
 end
 
 -- Taking a flight: the story so far in the zone you're flying to, or its welcome if you haven't started there.
@@ -214,14 +254,12 @@ function R.ShowFlight(zone)
         local last = titles[#titles]
         t.sub:SetText(last and (L["Last: %s"]):format(last) or (L["%d recaps"]):format(#keys))
     elseif R.ShowWelcome(zone) then
-        t = getToast()
+        t = toast -- as the welcome set it up (getToast again cleared its Journal button's page and its History)
     else
         return false
     end
     t.title:SetText((L["Flying to %s"]):format(ns.zoneLocal(zone)))
-    t.hideAt = GetTime() + SHOW_FOR
-    t:Show()
-    return true
+    return present(t, "flightStory", SHOW_FOR)
 end
 
 local ev -- created below; onZone waits for the end of a fight on it

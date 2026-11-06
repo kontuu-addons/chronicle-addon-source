@@ -164,7 +164,9 @@ local function onEncounterEnd(_, boss, _, _, success)
     ns.char.dungeonsDone[name] = time()
     if ns.settings.zoneRecap ~= false and ns.Reminder then
         local title = (L["%s: the end"]):format((name:gsub("^([^:]+)", function(d) return ns.zoneLocal(d) end)))
-        C_Timer.After(4, function() ns.Reminder.ShowStory(title, text, { "dend:" .. name .. "|" .. boss }) end)
+        C_Timer.After(4, function()
+            ns.Reminder.ShowStory(title, text, { "dend:" .. name .. "|" .. boss }, nil, nil, "zoneRecap")
+        end)
     end
 end
 
