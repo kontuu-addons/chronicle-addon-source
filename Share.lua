@@ -264,7 +264,7 @@ local nudge
 local function getNudge()
     if nudge then return nudge end
     local t = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
-    t:SetSize(360, 78)
+    t:SetSize(360, 92) -- with "Don't show these" in its foot
     t:SetPoint("TOP", UIParent, "TOP", 0, -140)
     t:SetFrameStrata("MEDIUM")
     t:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
@@ -272,7 +272,7 @@ local function getNudge()
     t:SetBackdropBorderColor(0.55, 0.45, 0.25, 1)
     t:EnableMouse(true)
     local icon = t:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(40, 40); icon:SetPoint("LEFT", 10, 0)
+    icon:SetSize(40, 40); icon:SetPoint("TOPLEFT", 10, -19)
     icon:SetTexture("Interface\\Icons\\INV_Misc_Note_01")
     t.title = t:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     t.title:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, 0); t.title:SetPoint("RIGHT", -28, 0); t.title:SetJustifyH("LEFT")
@@ -289,6 +289,8 @@ local function getNudge()
     later:SetScript("OnClick", function() t:Hide() end)
     local close = CreateFrame("Button", nil, t, "UIPanelCloseButton")
     close:SetSize(24, 24); close:SetPoint("TOPRIGHT", 0, 0)
+    t.kind = "shareNudge"
+    if ns.Reminder and ns.Reminder.AddOffLink then ns.Reminder.AddOffLink(t) end
     t:SetScript("OnUpdate", function(self)
         if self:IsMouseOver() then self.hideAt = GetTime() + 5 end
         if GetTime() > (self.hideAt or 0) then self:Hide() end

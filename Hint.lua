@@ -1,6 +1,7 @@
 -- Chronicle / Hint: for players who play with the map's quest objectives off. On request, one quest's objective
 -- areas show on the map (the game's own), and everything is put back when the map or the quest closes. An option,
--- off by default. Right-click a quest in the quest log or the tracker, or the Hint button on the story so far.
+-- off by default. Right-click a quest in the quest log, or the Hint button on the story so far. Never in the quest
+-- tracker: Chronicle leaves the game's tracker alone.
 local _, ns = ...
 local L = ns.L
 local H = {}
@@ -80,7 +81,7 @@ function H.Show(questID)
     if not pcall(QuestMapFrame_OpenToQuestDetails, questID) then restore() end
 end
 
--- "Hint" in the quest log's and the tracker's right-click menus
+-- "Hint" in the quest log's right-click menu
 local function questOf(owner)
     local region, depth = owner, 0
     while region and depth < 6 do
@@ -95,21 +96,21 @@ local function questOf(owner)
     end
 end
 
--- Only with the option on: addon code in the tracker's own menu (the one with Abandon Quest) can taint the tracker,
--- and a tainted tracker can't update its quest item buttons in combat. The likely reason it stopped showing progress
--- after kills until folded and opened again (thanks Peter, who was abandoning quests). The game can't take a menu
--- addition back, so once added it stays until the next /reload; with the option off nothing of ours is in there.
+-- Only the quest log's menu, and only with the option on. Nothing of ours goes into the quest tracker, not even its
+-- menu: the game's tracker stops updating for the rest of the session after any error in one of its updates (its
+-- dirty flag is only cleared once an update finishes), and players then blame the addons they have (thanks Peter and
+-- CommissarBear). A menu addition never caused it (the game runs them through secureexecuterange), but with nothing
+-- of ours in there, the tracker is plainly none of ours. The game can't take a menu addition back, so once added it
+-- stays until the next /reload.
 local hooked
 function H.Hook()
     if hooked or not ns.settings.questHints or not (Menu and Menu.ModifyMenu) then return end
     hooked = true
-    local function add(owner, root)
+    pcall(Menu.ModifyMenu, "MENU_QUEST_MAP_LOG_TITLE", function(owner, root)
         local id = questOf(owner)
         if not H.Available(id) then return end
         root:CreateDivider()
         root:CreateButton(L["Hint"], function() H.Show(id) end)
-    end
-    pcall(Menu.ModifyMenu, "MENU_QUEST_MAP_LOG_TITLE", add)
-    pcall(Menu.ModifyMenu, "MENU_QUEST_OBJECTIVE_TRACKER", add)
+    end)
 end
 table.insert(ns.onLogin, H.Hook)

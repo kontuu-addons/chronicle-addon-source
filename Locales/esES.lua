@@ -195,6 +195,9 @@ L["After you hand in a quest, a small note offers to share the new Forever quest
 
 -- reminders and sharing
 L["Previously in %s"] = "Anteriormente: %s"
+L["Don't show these"] = "No mostrar más"
+L["these notes are off now. To get them back, tick \"%s\" in /lore options."] = "estas notas están desactivadas. Para recuperarlas, marca «%s» en /lore options."
+L["\"Previously in...\" and dungeon notes are off now. To get them back, tick %s in /lore options."] = "las notas «Anteriormente en…» y las de mazmorras están desactivadas. Para recuperarlas, marca %s en /lore options."
 L["Last: %s"] = "Último: %s"
 L["%d recaps"] = "%d resúmenes"
 L["Entering %s"] = "Entrando: %s"
@@ -470,7 +473,7 @@ L["Open a book, a letter or a plaque and it goes on your shelf here, to hear aga
 L["Hint"] = "Pista"
 L["Quest hints"] = "Pistas de misión"
 L["a hint opens the map: after the fight."] = "una pista abre el mapa: después del combate."
-L["For playing with the map's quest objectives off: right-click a quest in the quest log or the tracker and choose Hint, or press Hint beside the story so far, and the map shows where that one quest's objectives are. Everything goes back as it was when you close the map."] = "Para jugar sin los objetivos de misión en el mapa: clic derecho en una misión del registro o del seguimiento y elige Pista, o pulsa Pista junto a la historia hasta ahora, y el mapa muestra dónde están los objetivos de esa misión. Todo vuelve a estar como antes al cerrar el mapa."
+L["For playing with the map's quest objectives off: right-click a quest in the quest log and choose Hint, or press Hint beside the story so far, and the map shows where that one quest's objectives are. Everything goes back as it was when you close the map."] = "Para jugar sin los objetivos de misión en el mapa: clic derecho en una misión del registro y elige Pista, o pulsa Pista junto a la historia hasta ahora, y el mapa muestra dónde están los objetivos de esa misión. Todo vuelve a estar como antes al cerrar el mapa."
 L["1 chapter  ·  about %d min"] = "1 capítulo  ·  unos %d min"
 L["Chapter %d of %d  ·  about %d min left"] = "Capítulo %d de %d  ·  quedan unos %d min"
 L["Paused after chapter %d of %d"] = "En pausa tras el capítulo %d de %d"
@@ -536,6 +539,8 @@ L["Keeps this line and the ones waiting after it"] = "Guarda esta frase y las qu
 L["Play, pause or resume the voice"] = "Reproducir, pausar o reanudar la voz"
 L["Quiet when unsure of man or woman"] = "Silencio si no sabe si es hombre o mujer"
 L["Some enemies come as both men and women, like Defias and Twilight Thugs. When the addon can't see which one is talking (often in a fight), it picks a voice. Tick to stay quiet instead. Enemy nameplates help it see them."] = "Algunos enemigos existen como hombres y mujeres, como los Defias. Cuando el addon no ve quién habla (a menudo en combate), elige una voz. Márcalo para que guarde silencio. Las placas de nombre enemigas le ayudan a verlos."
+L["Languages you don't know"] = "Idiomas que no conoces"
+L["NPCs who speak a language your character doesn't know, like the Scarlet Crusade to the Horde or Blackrock orcs to the Alliance, stay silent. Tick to hear them say the scrambled words the game shows."] = "Los PNJ que hablan un idioma que tu personaje no conoce, como la Cruzada Escarlata para la Horda o los orcos Roca Negra para la Alianza, se quedan en silencio. Márcalo para oírlos decir las palabras revueltas que muestra el juego."
 L["Reset to defaults"] = "Restablecer valores"
 L["Put every Chronicle option back to its default? Your journal, the lines you've heard and where your windows sit are kept."] = "¿Devolver todas las opciones de Chronicle a sus valores por defecto? Tu diario, las frases que has oído y la posición de tus ventanas se conservan."
 L["options are back to their defaults."] = "las opciones han vuelto a sus valores por defecto."

@@ -65,7 +65,7 @@ local function onLevel(level)
     local zones = level < 60 and suggestions(level, side, race and HOME[race]) or {}
     local text = #zones > 0 and (L["New stories at your level: %s"]):format(table.concat(zones, ", ")) or line
     if not text or not ns.Reminder then return end
-    ns.Reminder.ShowStory((L["Level %d"]):format(level), text, { key })
+    ns.Reminder.ShowStory((L["Level %d"]):format(level), text, { key }, nil, nil, "levelMilestones")
 end
 
 local ev = CreateFrame("Frame")

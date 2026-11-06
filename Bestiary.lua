@@ -118,13 +118,14 @@ local function show(gid, n)
     if not (g and ns.Reminder and ns.Reminder.ShowStory) then return end
     local line = (n == 1 and L["Told by %s"] or L["More from %s"]):format(g.who or "")
     ns.Reminder.ShowStory((L["Bestiary: %s"]):format(g.name), g.text and g.text[n], { B.Key(gid, n) },
-        function() ns.Journal.ShowBestiary(g.zone, gid) end, line)
+        function() ns.Journal.ShowBestiary(g.zone, gid) end, line, "bestiary")
 end
 
 -- the next waiting entry, once the fight is over and no other note is up (one note at a time: it would replace it)
 local function flush()
     flushing = nil
     if #waiting == 0 or fighting() then return end -- the end of the fight looks again
+    if not ns.settings.bestiary then wipe(waiting) return end -- turned off from a note: the journal has them
     if ns.Reminder and ns.Reminder.Busy and ns.Reminder.Busy() then
         flushing = true
         C_Timer.After(5, flush)

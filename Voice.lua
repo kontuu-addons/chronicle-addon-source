@@ -611,6 +611,16 @@ local function norm(s)
     return " " .. s:lower():gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("[^%a]+", " ") .. " "
 end
 
+-- Words in a language your character doesn't know, which the game shows scrambled ("Lon algos vil wirsh...", a Scarlet
+-- Zealot to the Horde; a few trainers' greetings it marks as Common by mistake): the data marks their key "tongue:".
+-- With "Languages you don't know" on, the key to play; off, the marked key, which matches the line (so it isn't kept
+-- for sharing) but has no voice. World speech (Speech.lua) and greetings both go through here. Thanks Kaesemuffin.
+local function isTongue(key) return type(key) == "string" and key:sub(1, 7) == "tongue:" end
+function V.Tongue(key)
+    if isTongue(key) and ns.settings.tongues then return key:sub(8) end
+    return key
+end
+
 function V.GreetingKey(npcID, text)
     local list = ns.Greetings(npcID)
     if not list then return nil end
@@ -621,9 +631,9 @@ function V.GreetingKey(npcID, text)
             -- a short greeting, matched whole: "=hail *" is "Hail, paladin!" ("*" = the name, race or class the
             -- game filled in)
             local pattern = phrase:sub(2):gsub("%*", "%%a[%%a ]-")
-            if shown:match("^ *" .. pattern .. " *$") then return item[1] end
+            if shown:match("^ *" .. pattern .. " *$") then return V.Tongue(item[1]) end
         elseif shown:find(" " .. phrase .. " ", 1, true) then
-            return item[1]
+            return V.Tongue(item[1])
         end
     end
 end
@@ -694,6 +704,8 @@ function onGreeting(npcID, key, text, female)
     end
     if not ns.settings.greetings then return end
     if not entry then
+        -- scrambled words with "Languages you don't know" off: silent, not read by the game's text-to-speech either
+        if isTongue(key) then return end
         if ns.settings.ttsFallback and text then
             local k = "tts:gos:" .. tostring(npcID)
             local last = ns.char.greeted[k]

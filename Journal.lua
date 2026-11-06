@@ -1303,6 +1303,13 @@ local function renderZone(zone)
         end
     end
     y = y - 10
+    -- how the story ended here: the zone's epilogue once you have seen it through, to read again as on a dungeon's
+    -- page (thanks emmaloui: it was only in the note that came with it, "how can I read that pop up again?")
+    local epi = story and ns.Endings.EpilogueKey(zone)
+    if epi then
+        y, n = placeTodos({ L["How it ends"], { title = lore().epilogue[epi] } }, y, n, pw)
+        y = y - 10
+    end
     -- books, plaques and letters found here: the ones you have read (click: hear it), the others only as a place
     local here = J.ZoneBooks(zone)
     J.booksAt = -y - 10

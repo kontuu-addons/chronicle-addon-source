@@ -122,6 +122,7 @@ local DEFAULTS = {
     questMarkers = false, -- "!" at quest givers with quests for you, "?" where to hand in (off when Questie runs)
     mixedSure = false,   -- NPCs that come as men and women: quiet when the speaker can't be seen (else a guess)
     worldSpeech = true,  -- NPCs speaking out loud in the world (speech bubbles, yells)
+    tongues = false,     -- NPCs in a language your character doesn't know say the game's scrambled words (Kaesemuffin)
     subtitles = true,    -- show the text of what is being said in the talking head
     partySync = true,    -- swap unvoiced recordings with party members who also run Chronicle
     shareNudge = true,   -- after a turn-in, offer to share new quests that have no voice yet
@@ -631,7 +632,7 @@ SlashCmdList.CHRONICLE = function(msg)
         end
     elseif cmd == "welcome" or cmd == "zone" then
         local zone = ns.zoneEN(ns.clean(GetRealZoneText()))
-        if not (ns.Reminder and ns.Reminder.ShowWelcome(zone)) then ns.pr((L["no introduction for %s yet."]):format(tostring(ns.zoneLocal(zone)))) end
+        if not (ns.Reminder and ns.Reminder.ShowWelcome(zone, true)) then ns.pr((L["no introduction for %s yet."]):format(tostring(ns.zoneLocal(zone)))) end
     elseif cmd == "checks" then
         local zone = ns.zoneEN(ns.clean(GetRealZoneText()))
         local total, good, bad = checkStats(zone)
