@@ -34,10 +34,11 @@ end
 -- A small number for a quest page's text, the same as the builder's (lorekeeper.py text_check): letters only, without
 -- the reader's name and any race or class word (the game fills those in for each reader). When it differs from the one
 -- shipped for a voiced quest, Blizzard has rewritten the page since it was voiced, and the share sends the new text so
--- the voice can be fixed. This covers the original quests as well as the new ones.
+-- the voice can be fixed. This covers the original quests as well as the new ones. The Skyborne too: "Hail, young
+-- skyborne" looked like a rewritten page to every Skyborne player, who were asked to share it.
 local CHECK_SKIP = {}
-for w in ("human orc dwarf night elf undead scourge tauren gnome troll warrior paladin hunter rogue priest shaman mage "
-    .. "warlock druid"):gmatch("%a+") do CHECK_SKIP[w] = true end
+for w in ("human orc dwarf night elf undead scourge tauren gnome troll skyborne warrior paladin hunter rogue priest "
+    .. "shaman mage warlock druid"):gmatch("%a+") do CHECK_SKIP[w] = true end
 
 local function textCheck(text, by)
     local name = by and type(by.name) == "string" and by.name:lower() or nil

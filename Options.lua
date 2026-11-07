@@ -42,7 +42,8 @@ local MORE = {
     fishingLines = true, rareLines = true, bestiary = true,
     lockSpeaker = true, bigSubtitles = true, skipHeard = true, stopOnClose = true, muteGameGreetings = true,
     ttsFallback = true, speakerStays = true,
-    chroniclePause = true, zoneRecap = true, logStory = true, tips = true, levelMilestones = true, flightStory = true,
+    chroniclePause = true, zoneRecap = true, dungeonStory = true, logStory = true, tips = true, levelMilestones = true,
+    flightStory = true,
     hideUnfound = true, showLeft = true, questTabs = true, newMarker = true,
     questHints = true, questMarkers = true, minimapFree = true,
     shareNudge = true,
@@ -287,13 +288,14 @@ local function build()
     box("zoneIntro", L["Welcome to new zones"], L["The first time you enter a zone, a short introduction to it. Click Listen to hear the narrator read it."])
     box("areaIntros", L["Tell me about new places"], L["The first time you walk into a named place inside a zone, like a village or a ruin, the narrator says a line or two about it. Only when nobody else is talking."])
     box("zoneRecap", L["\"Previously in...\" reminders"], L["After 30 minutes or more away, offers the narrator's recap of what you last did there."])
+    box("dungeonStory", L["Dungeon stories"], L["Walking into a dungeon or raid, a note offers its story. The first time you beat one of its bosses, the narrator tells who it was, and after the last one how the story ends. Nothing plays unless you click Listen."])
     box("logStory", L["The story so far in the quest log"], L["When you select a quest that belongs to a chapter, a small panel beside the quest log shows the chapter, your step and a recap of what happened last. Never anything you have not done yet."])
     box("tips", L["Tips in the journal"], L["A short tip about what Chronicle can do, under a chapter in the journal."])
     box("levelMilestones", L["Level milestones"], L["Every 10th level, a short word from the narrator and two or three zones where new stories open up for your level. Nothing plays unless you click Listen."])
     box("flightStory", L["The story on flights"], L["When you take a flight, a small note offers the story so far in the zone you're flying to, or its welcome if you haven't been there. Nothing plays unless you click Listen."])
     box("campfire", L["By the fire"], L["Near a camp fire, a short note says when the zone has a tale you haven't heard. Sit down, and the narrator tells the next one."])
     box("hideUnfound", L["Hide what I haven't found"], L["No hints at all about what you haven't found yet: no chapters still to discover in the journal or on the map, no road ahead, and no empty places or totals in the Library. Everything you have been through stays."])
-    box("showLeft", L["Show what's left"], L["Lists the quests still to do in each chapter by name, level and quest giver, and shows where the chapters you haven't found yet start, in the journal and on the map. No story is given away."])
+    box("showLeft", L["Show what's left"], L["Lists the quests still to do in each chapter by name, level and quest giver, and shows where the chapters you haven't found yet start, in the journal and on the map. It also names the places and creatures you haven't found yet. No story is given away."])
     box("questTabs", L["Side tabs on the quest window"], L["Listen and Recap as tabs on the right side of the quest window, like the journal's, instead of buttons inside it. Handy when other addons put their own buttons there."],
         nil, function(v) ns.settings.questTabs = v; ns.Voice.UpdateQuestButton() end)
     box("newMarker", L["Mark new Forever quests"], L["Shows \"New in WoW: Forever\" on the quest window for quests that were not in original Classic, and whether they have a voice yet."])

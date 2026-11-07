@@ -86,7 +86,16 @@ end
 -- a quest picked by profession ("Camping 101: Mining"), or a breadcrumb that only points the way to another quest and
 -- is gone once that one is taken (Rejold's New Brew, which could only be had by abandoning Shimmer Stout: thanks to a
 -- player on CurseForge): never missing, only counted and shown once taken
-local function optional(id) return (lore().optional or {})[id] or (lore().breadcrumb or {})[id] end
+-- A "speak with" step (Lore "leadsTo": it only sends you to the one who gives the next quest) once you have that next
+-- quest without it: it was a breadcrumb the game no longer offers, or you could not have the next one. The old
+-- database doesn't know every breadcrumb (Eagan Peltskinner held The Call to Northshire at 6/7, a player on CurseForge)
+local function pastIt(id)
+    local to = (lore().leadsTo or {})[id]
+    return to ~= nil and (flaggedDone(to) or ns.char.active[to] ~= nil)
+end
+local function optional(id)
+    return (lore().optional or {})[id] or (lore().breadcrumb or {})[id] or pastIt(id)
+end
 
 -- one of a group of which only one can be done (Lore "exclusive": Call of Fire from four trainers, Little Pamela or
 -- Sister Pamela): out of reach once another of its group is done or in your quest log
@@ -597,7 +606,12 @@ local function getListRow(i)
                 local total = ch.total or #ch.entries
                 GameTooltip:AddLine((L["%d of %d quests done"]):format(ch.done, total), 1, 1, 1)
                 local going = #ch.entries - ch.done
-                if ch.done >= total then
+                -- a dungeon: cleared (its last boss) is said apart, and it is finished only with both
+                if ch.dungeon and ch.cleared then
+                    GameTooltip:AddLine(ch.cleared > 0 and (L["Cleared %s"]):format(ns.Date(ch.cleared)) or L["Cleared"],
+                        0.8, 0.8, 0.8)
+                end
+                if ch.done >= total and (ch.cleared or not ch.dungeon) then
                     GameTooltip:AddLine(L["Finished"], 0.3, 0.9, 0.3)
                 elseif going > 0 then
                     GameTooltip:AddLine(going .. L[" in progress"], 0.8, 0.8, 0.8)
@@ -772,6 +786,9 @@ local function hideAll()
     end
     for _, r in ipairs(entryRows) do r:Hide() end
     for _, v in pairs(header) do if v.Hide then v:Hide() end end
+    -- a dungeon's page moves these onto and under its painting; every other page has them where they were made
+    if header.intro then header.intro:ClearAllPoints(); header.intro:SetPoint("TOPLEFT", 0, -50) end
+    if header.recap then header.recap:ClearAllPoints(); header.recap:SetPoint("TOPRIGHT", page, "TOPRIGHT", 0, 0) end
     for _, v in pairs(person) do if type(v) == "table" and v.Hide then v:Hide() end end
     for _, r in ipairs(person.deal or {}) do r:Hide() end
     for _, v in pairs(beast) do if type(v) == "table" and v.Hide then v:Hide() end end
@@ -789,6 +806,8 @@ local function getTodoRow(i)
     r.title = text(r, "QuestFont", INK); r.title:SetPoint("TOPLEFT", 20, 0); r.title:SetJustifyH("LEFT")
     r.who = text(r, "GameFontNormalSmall", INK_SOFT); r.who:SetPoint("TOPLEFT", r.title, "BOTTOMLEFT", 0, -2)
     r.who:SetJustifyH("LEFT")
+    r.rule = r:CreateTexture(nil, "ARTWORK"); r.rule:SetHeight(1); r.rule:SetColorTexture(0.45, 0.33, 0.16, 0.45)
+    r.rule:Hide()
     local hl = r:CreateTexture(nil, "HIGHLIGHT"); hl:SetAllPoints(); hl:SetColorTexture(0.55, 0.35, 0.1, 0.12)
     r:SetScript("OnClick", function(self)
         click()
@@ -819,8 +838,9 @@ local function getTodoRow(i)
     return r
 end
 
--- lays out quests (or a label when q is a string) from row n on, from y down; returns the new y and next n
-local function placeTodos(items, y, n, pw, x)
+-- lays out quests (or a label when q is a string) from row n on, from y down; returns the new y and next n. ruled: a
+-- label with a thin line after it, to the page's edge (a dungeon's page). A quest's icon is grey when q.grey.
+local function placeTodos(items, y, n, pw, x, ruled)
     x = x or 0
     for _, q in ipairs(items) do
         local r = getTodoRow(n)
@@ -834,9 +854,16 @@ local function placeTodos(items, y, n, pw, x)
             r.title:SetFontObject("QuestTitleFont"); r.title:SetText(q); r.who:SetText("")
         else
             r.quest = q; r:EnableMouse(q.x ~= nil or q.open ~= nil or q.keys ~= nil or q.text ~= nil or q.fn ~= nil)
-            r.pin:SetTexture(q.icon or "Interface\\AddOns\\ForeverChronicle\\Media\\pin")
-            r.pin:SetSize(q.icon and 16 or 14, q.icon and 16 or 14)
-            r.pin:SetShown(q.x ~= nil or q.icon ~= nil)
+            if q.atlas then
+                r.pin:SetAtlas(q.atlas)
+            else
+                r.pin:SetTexture(q.icon or "Interface\\AddOns\\ForeverChronicle\\Media\\pin")
+                r.pin:SetTexCoord(0, 1, 0, 1) -- a row that showed an atlas before keeps its crop otherwise
+            end
+            local big = q.icon or q.atlas
+            r.pin:SetSize(big and 16 or 14, big and 16 or 14)
+            r.pin:SetShown(q.x ~= nil or big ~= nil)
+            r.pin:SetDesaturated(q.grey and true or false); r.pin:SetAlpha(q.grey and 0.5 or 1)
             r.title:ClearAllPoints(); r.title:SetPoint("TOPLEFT", 20, 0)
             r.title:SetFontObject("QuestFont")
             local line, who = J.ToDoLine(q, true)
@@ -850,6 +877,15 @@ local function placeTodos(items, y, n, pw, x)
         r:Show() -- shown before measuring: a new row's text reads 0 tall while hidden (its second line got no room)
         local h = r.title:GetStringHeight() + (r.who:GetText() ~= "" and (r.who:GetStringHeight() + 4) or 0) + 4
         r:SetHeight(h)
+        if type(q) == "string" and ruled then
+            local mid = -r.title:GetStringHeight() / 2
+            r.rule:ClearAllPoints()
+            r.rule:SetPoint("LEFT", r, "TOPLEFT", r.title:GetStringWidth() + 12, mid)
+            r.rule:SetPoint("RIGHT", r, "TOPRIGHT", 0, mid)
+            r.rule:Show()
+        else
+            r.rule:Hide()
+        end
         y = y - h - 6
     end
     return y, n
@@ -1500,8 +1536,8 @@ attuneEv:SetScript("OnEvent", function(_, _, ...)
 end)
 
 -- ---------------------------------------------------------------- render: dungeons and raids
--- Every dungeon and raid with a story: its introduction, its chapters (click: open the chapter), and how its story
--- ends, once you have beaten its last boss (Endings.lua keeps when).
+-- Every dungeon and raid with a story: its introduction, its chapters (click: open the chapter), the bosses you have
+-- beaten with who they were, and how its story ends, once you have beaten its last boss (Endings.lua keeps when).
 local RAIDS = { ["Molten Core"] = true, ["Onyxia's Lair"] = true, ["Blackwing Lair"] = true, ["Zul'Gurub"] = true,
     ["Ruins of Ahn'Qiraj"] = true, ["Ahn'Qiraj"] = true, ["Naxxramas"] = true }
 
@@ -1514,6 +1550,37 @@ local LEVELS = { ["Ragefire Chasm"] = { 13, 18 }, ["Wailing Caverns"] = { 17, 24
     ["Dire Maul"] = { 55, 60 }, ["Stratholme"] = { 58, 60 }, ["Scholomance"] = { 58, 60 },
     -- new in WoW: Forever, by the levels of the quests found there so far
     ["Ruins of Lordaeron"] = { 21, 22 }, ["Excavation Site: Wetlands"] = { 31, 31 } }
+
+-- Each dungeon's painting across the top of its page: its loading screen in the game's files (the user: "Can we some
+-- how make it even cooler? ... Maybe some graphics"). The old ones are the screens of 2004, a square file the game
+-- shows at 4:3 with the logo above the picture and a frame below it; WoW: Forever's own are wide, with an empty band
+-- above and below.
+local ART = { ["Ragefire Chasm"] = 131862, ["Wailing Caverns"] = 131882, ["The Deadmines"] = 131833,
+    ["Shadowfang Keep"] = 131869, ["Blackfathom Deeps"] = 131823, ["The Stockade"] = 131870, ["Gnomeregan"] = 131841,
+    ["Razorfen Kraul"] = 131865, ["Scarlet Monastery"] = 131852, ["Razorfen Downs"] = 131864, ["Uldaman"] = 131876,
+    ["Zul'Farrak"] = 131885, ["Maraudon"] = 131850, ["Sunken Temple"] = 131872, ["Blackrock Depths"] = 131824,
+    ["Blackrock Spire"] = 131825, ["Dire Maul"] = 131835, ["Scholomance"] = 131868, ["Stratholme"] = 131871,
+    ["Molten Core"] = 131851, ["Onyxia's Lair"] = 131863, ["Blackwing Lair"] = 131827, ["Zul'Gurub"] = 131886,
+    ["Ruins of Ahn'Qiraj"] = 131818, ["Ahn'Qiraj"] = 131819, ["Naxxramas"] = 131854,
+    -- WoW: Forever's
+    ["Hall of Thanes"] = 7963781, ["Ruins of Lordaeron"] = 7963782, ["Excavation Site: Wetlands"] = 7963777,
+    ["City of Dalaran"] = 7963775, ["The Drowned City"] = 7963741, ["Krol'dok Stronghold"] = 7963780,
+    ["Alcaz Prison"] = 7963734, ["Blackmaw Hold"] = 7963784, ["Shaper's Terrace"] = 7963783 }
+local BANNER_H = 150
+
+-- the part of a painting that fills w by h: the picture's whole width and as much of its height as that leaves, from
+-- its middle (narrower instead, should the strip ever be taller than the picture)
+local function artCoords(file, w, h)
+    local l, r, top, bottom, aspect = 0.02, 0.98, 0.235, 0.795, 4 / 3 -- the old: between the logo and the frame
+    if file > 1000000 then l, r, top, bottom, aspect = 0, 1, 0.162, 0.841, 2992 / 1684 end -- WoW: Forever's
+    local dv = (r - l) * aspect * h / w
+    if dv > bottom - top then
+        local du = (bottom - top) * w / (h * aspect)
+        l, r, dv = 0.5 - du / 2, 0.5 + du / 2, bottom - top
+    end
+    local t = (top + bottom - dv) / 2
+    return l, r, t, t + dv
+end
 
 local function wingOf(name, dungeon) return name == dungeon or name:sub(1, #dungeon + 2) == dungeon .. ": " end
 
@@ -1561,6 +1628,12 @@ local function dungeons()
                 end
             end
         end
+        if not d.lo then -- a new one with no chapter yet (Krol'dok Stronghold): by the levels of its quests
+            for line in (((lo.dungeonQuests or {})[name]) or ""):gmatch("[^\n]+") do
+                local lv = tonumber((select(2, strsplit("\t", line))))
+                if lv and lv > 1 then d.lo, d.hi = math.min(d.lo or lv, lv), math.max(d.hi or lv, lv) end
+            end
+        end
         if LEVELS[name] then d.lo, d.hi = LEVELS[name][1], LEVELS[name][2] end
         if d.raid then d.lo, d.hi = 60, 60 end -- every raid is for level 60
         local hit = matches(name, ns.zoneLocal(name))
@@ -1579,6 +1652,340 @@ local function levels(d)
     return s
 end
 
+-- Every quest of a dungeon: what to pick up before going in, and where (the user: "we need to add all quests for
+-- dungeons, where to pick them up"). Lore dungeonQuests has one string per dungeon, a line per quest: the quests the
+-- game files under it and those whose targets are only found inside (Soran'ruk Fragments), with WoW: Forever's new
+-- ones; dungeonSteps the quests before them, wherever those are. Unpacked when a dungeon's page opens.
+local function questLine(line)
+    local id, lvl, low, races, classes, prev, skill, start, title, giver, zone, x, y = strsplit("\t", line)
+    -- the quests before it: one, or one per way to it ("8929,8930": each side's In Search of Anthion)
+    local prevs = {}
+    for p in (prev or ""):gmatch("%d+") do if tonumber(p) > 0 then prevs[#prevs + 1] = tonumber(p) end end
+    return { id = tonumber(id), lvl = tonumber(lvl) or 0, min = tonumber(low) or 0, races = tonumber(races) or 0,
+        classes = tonumber(classes) or 0, prevs = prevs, skill = tonumber(skill) or 0,
+        start = start or "", title = title or "?", giver = (giver or "") ~= "" and giver or nil,
+        zone = (zone or "") ~= "" and zone or nil, x = tonumber(x), y = tonumber(y) }
+end
+
+local dungeonQuestCache, dungeonSteps = {}, nil
+local function dungeonQuestList(name)
+    local quests = dungeonQuestCache[name]
+    if quests then return quests end
+    quests = {}
+    for line in (((lore().dungeonQuests or {})[name]) or ""):gmatch("[^\n]+") do quests[#quests + 1] = questLine(line) end
+    dungeonQuestCache[name] = quests
+    return quests
+end
+
+local function dungeonStep(id)
+    if not dungeonSteps then
+        dungeonSteps = {}
+        for line in (lore().dungeonSteps or ""):gmatch("[^\n]+") do
+            local q = questLine(line)
+            if q.id then dungeonSteps[q.id] = q end
+        end
+    end
+    return dungeonSteps[id]
+end
+
+-- can this character take it: class, race (a new race like the Skyborne by its side) and profession
+local function dungeonQuestForMe(q)
+    local classBit = 2 ^ ((select(3, UnitClass("player")) or 1) - 1)
+    if q.classes > 0 and bit.band(q.classes, classBit) == 0 then return false end
+    if q.races > 0 then
+        local race = select(3, UnitRace("player")) or 1
+        if race <= 8 then
+            if bit.band(q.races, 2 ^ (race - 1)) == 0 then return false end
+        else
+            local side = UnitFactionGroup("player")
+            local mask = side == "Alliance" and ALLIANCE or side == "Horde" and HORDE or nil
+            if mask and bit.band(q.races, mask) == 0 then return false end
+        end
+    end
+    return q.skill == 0 or myProfessions()[q.skill] == true
+end
+
+-- Where a quest you can't take yet begins for you: back along the quests before it to the first one not done (The
+-- Defias Brotherhood starts with Gryan Stoutmantle in Sentinel Hill). The one you're on, when it is on the way. Where
+-- each side has its own step before it, yours.
+local function chainStart(id, byId)
+    local cur = id
+    for _ = 1, 40 do
+        local r = byId[cur] or dungeonStep(cur)
+        local info = not r and ns.Map and ns.Map.QuestInfo(cur)
+        local prevs = r and r.prevs or (info and info.prevs) or {}
+        local pick
+        for _, p in ipairs(prevs) do
+            p = math.abs(p)
+            if p == 0 or flaggedDone(p) then return cur end
+            if ns.char.active[p] then return p end
+            local pr = byId[p] or dungeonStep(p)
+            if not pick and (pr and dungeonQuestForMe(pr) or not pr and (not ns.Map or ns.Map.ForMe(p))) then pick = p end
+        end
+        if not (pick or prevs[1]) then return cur end
+        cur = pick or prevs[1]
+    end
+    return cur
+end
+
+-- The whole way to a quest, its first step to itself, as you go it (the user: "we need to check quest chains, and where
+-- we are in that chain if we have already started it"): where each side or class has its own step before it, the one
+-- you did or have, else yours. chainStart's step is on it, every step before that one done.
+local function chainPath(id, byId)
+    local path, seen, cur = {}, {}, id
+    while cur and not seen[cur] and #path < 40 do
+        seen[cur] = true
+        table.insert(path, 1, cur)
+        local r = byId[cur] or dungeonStep(cur)
+        local info = not r and ns.Map and ns.Map.QuestInfo(cur)
+        local prevs = r and r.prevs or (info and info.prevs) or {}
+        local went, mine
+        for _, p in ipairs(prevs) do
+            p = math.abs(p)
+            if p ~= 0 then
+                if flaggedDone(p) or ns.char.active[p] then went = p; break end
+                local pr = byId[p] or dungeonStep(p)
+                if not mine and (pr and dungeonQuestForMe(pr) or not pr and (not ns.Map or ns.Map.ForMe(p))) then mine = p end
+            end
+        end
+        cur = went or mine or (prevs[1] and math.abs(prevs[1]) or nil)
+        if cur == 0 then cur = nil end
+    end
+    return path
+end
+
+-- a chain's steps as the game's little lights, then which step it is: green the ones done, yellow the one you're on
+-- or take next, grey the ones still ahead (never named: that would give the story away)
+local DOT = "|TInterface\\COMMON\\Indicator-%s:10:10:0:0|t"
+local function chainTrack(k, n)
+    local dots = {}
+    for i = 1, n do dots[i] = DOT:format(i < k and "Green" or i == k and "Yellow" or "Gray") end
+    return table.concat(dots) .. "  " .. (L["Step %d of %d"]):format(k, n)
+end
+
+-- a quest's line on the page: its giver and where they stand (click: a marker there); inside a dungeon, its way in;
+-- an item that begins it, where it is found
+local function dungeonQuestRow(q, d)
+    local row = { title = q.title, lvl = q.lvl > 1 and q.lvl or nil, min = q.min, giver = q.giver, zone = q.zone,
+        x = q.x, y = q.y }
+    local inside = q.start:match("^in:(.+)$")
+    local item = q.start:match("^item:?(.*)$")
+    if inside then
+        row.zone, row.x, row.y = nil, nil, nil
+        if ns.Map then row.zone, row.x, row.y = ns.Map.DungeonDoor(inside == "Blackrock Mountain" and d.name or inside) end
+        row.giver = nil
+        -- who gives it, if anyone knows: picked up inside (Light's Justice was, before we knew Morbin Lightbane)
+        row.from = q.giver and ((L["Given by %s"]):format(q.giver) .. (L[" (in %s)"]):format(ns.zoneLocal(inside)))
+            or (L["Begins inside %s"]):format(ns.zoneLocal(inside))
+    elseif item then
+        row.giver, row.zone, row.x, row.y = nil, nil, nil, nil
+        row.from = item ~= "" and (L["Begins with an item found in %s"]):format(ns.zoneLocal(item)) or L["Begins with an item"]
+    elseif q.zone and not q.x then
+        row.giver = nil
+        row.from = q.giver and ((L["Given by %s"]):format(q.giver) .. (L[" (in %s)"]):format(ns.zoneLocal(q.zone)))
+            or (L["Begins in %s"]):format(ns.zoneLocal(q.zone))
+    elseif q.x and not q.giver then
+        row.from = L["Begins here"] -- and the spot, as placeTodos adds it
+    end
+    return row
+end
+
+-- The Quests on a dungeon's page: the ones in your log, the ones to pick up (by level), each chain that leads here
+-- from where it begins for you, and the ones done. A step you can't take yet shows only where its chain begins, never
+-- its name (that would give the story away), and so does a quest that begins with an item found there. Each with the
+-- game's own mark: a "!" to pick up (grey until your level allows it), a "?" in your log (gold once it is done there),
+-- a tick when handed in; a step of a chain with how far along it you are (chainTrack).
+local ICON_PICKUP, ICON_UNDONE = "Interface\\GossipFrame\\AvailableQuestIcon", "Interface\\GossipFrame\\IncompleteQuestIcon"
+local function questComplete(id)
+    local isComplete = id and C_QuestLog and C_QuestLog.IsComplete
+    if not isComplete then return false end
+    local ok, done = pcall(isComplete, id)
+    return ok and done == true
+end
+
+local function placeDungeonQuests(d, y, n, pw)
+    local quests = dungeonQuestList(d.name)
+    if #quests == 0 then return y, n end
+    local byId = {}
+    for _, q in ipairs(quests) do byId[q.id] = q end
+    local crumbs = lore().breadcrumb or {}
+    local entries, open, doneRows, seen, items, found = {}, {}, {}, {}, {}, 0
+    local function entry(id, state)
+        local e = entries[id]
+        if not e then
+            e = { id = id, leads = 0, state = state }
+            entries[id] = e
+            open[#open + 1] = e
+        end
+        return e
+    end
+    -- how far along the way to quest id a line's step is: step k of n, n counted to the last quest here it leads to
+    local function along(e, id)
+        local path = chainPath(id, byId)
+        for i, s in ipairs(path) do
+            if s == e.id then
+                e.k, e.n = i, math.max(e.n or 0, #path)
+                return
+            end
+        end
+    end
+    for _, q in ipairs(quests) do
+        if flaggedDone(q.id) then
+            if not seen[q.title] then
+                seen[q.title] = true
+                doneRows[#doneRows + 1] = { title = q.title, icon = ICON_DONE }
+            end
+        elseif ns.char.active[q.id] then
+            along(entry(q.id, "active"), q.id)
+        elseif dungeonQuestForMe(q) and not J.SiblingTaken(q.id)
+            and not (crumbs[q.id] and (flaggedDone(crumbs[q.id]) or ns.char.active[crumbs[q.id]])) then
+            local s = chainStart(q.id, byId)
+            local first = byId[s]
+            if ns.char.active[s] then
+                local e = entry(s, "active")
+                e.leads = e.leads + 1
+                along(e, q.id)
+            elseif first and first.start:match("^item") then
+                -- it begins with something you find there: counted, not named (one count for its whole chain)
+                if not items[s] then items[s] = true; found = found + 1 end
+            elseif s == q.id then
+                along(entry(q.id, "ready"), q.id)
+            else
+                local e = entry(s, "start")
+                e.leads = e.leads + 1
+                along(e, q.id)
+            end
+        end
+    end
+    -- what each line says: the dungeon's own quests and the steps before them from the lists, else the map data; one
+    -- line for copies of a quest (The Sparklematic 5200 has six), the quests they lead to counted together
+    local rows, twins = {}, {}
+    for _, e in ipairs(open) do
+        local q = byId[e.id] or dungeonStep(e.id)
+        local row
+        if q then
+            row = dungeonQuestRow(q, d)
+        else
+            local info = ns.Map and ns.Map.QuestInfo(e.id) or {}
+            row = { title = (ns.db.quests[e.id] and ns.db.quests[e.id].title) or info.t or (lore().titles or {})[e.id]
+                or questTitle(e.id), lvl = info.lvl, min = info.min, giver = personOf(e.id, "giver"), zone = info.zone,
+                x = info.x, y = info.y }
+        end
+        local key = e.state .. "|" .. row.title .. "|" .. (row.from or row.giver or "")
+        local twin = twins[key]
+        if twin then
+            twin.leads = twin.leads + e.leads
+            if (e.n or 0) > (twin.n or 0) then twin.k, twin.n = e.k, e.n end
+        else
+            row.id, row.leads, row.state, row.k, row.n = e.id, e.leads, e.state, e.k, e.n
+            row.sort = (e.state == "active" and 0 or 1000) + (row.lvl or 0)
+            twins[key] = row
+            rows[#rows + 1] = row
+        end
+    end
+    local level = UnitLevel("player") or 1
+    for _, row in ipairs(rows) do
+        if row.state == "active" then
+            row.title = "|cffd9a400" .. L["In progress: "] .. "|r" .. row.title
+            row.icon = questComplete(row.id) and ICON_ACTIVE or ICON_UNDONE
+        else
+            row.icon, row.grey = ICON_PICKUP, (row.min or 0) > level or nil
+        end
+        local notes = {}
+        -- a step of a chain: how far along it you are
+        if row.k and (row.n or 0) > 1 then notes[#notes + 1] = chainTrack(row.k, row.n) end
+        -- too low for it yet: the giver has nothing for you until then
+        if row.state ~= "active" and (row.min or 0) > level then notes[#notes + 1] = (L["From level %d"]):format(row.min) end
+        if row.leads > 0 then
+            notes[#notes + 1] = row.leads == 1 and L["Leads to a quest here"] or (L["Leads to %d quests here"]):format(row.leads)
+        end
+        if #notes > 0 then row.extra = "|cff7a6a55" .. table.concat(notes, "  ·  ") .. "|r" end
+    end
+    table.sort(rows, function(a, b)
+        if a.sort ~= b.sort then return a.sort < b.sort end
+        return a.title < b.title
+    end)
+    if #rows + #doneRows + found == 0 then return y, n end
+    y, n = placeTodos({ L["Quests"] }, y, n, pw, nil, true)
+    y, n = placeTodos(rows, y, n, pw)
+    if found > 0 then
+        y, n = placeTodos({ { title = "|cff7a6a55" .. (found == 1 and L["One more begins with an item you find."]
+            or (L["%d more begin with items you find."]):format(found)) .. "|r", icon = ICON_PICKUP, grey = true } }, y, n, pw)
+    end
+    y, n = placeTodos(doneRows, y, n, pw)
+    return y - 10, n
+end
+
+-- Its bosses (the game's own list of them): the ones this character has beaten, each with who it was (click: the
+-- narrator tells it), and how many are still to find, never named (the user, 2026-11-07: "where is all the boss
+-- lore ?"). Only the stories of real lore are told; the others are a name.
+local SKULL = "Interface\\Icons\\INV_Misc_Bone_HumanSkull_01"
+local function placeBosses(d, y, n, pw)
+    -- the game's counts of last bosses, in case they weren't there yet at login
+    if ns.Endings and ns.Endings.FromStats then pcall(ns.Endings.FromStats) end
+    local all = {}
+    for id, b in pairs(lore().bosses or {}) do
+        if b.d == d.name then all[#all + 1] = { id = id, b = b } end
+    end
+    if #all == 0 then return y, n end
+    table.sort(all, function(a, b) return (a.b.o or 0) < (b.b.o or 0) end)
+    local rows, left = {}, 0
+    for _, e in ipairs(all) do
+        if ns.Endings and ns.Endings.Beaten(e.id) then
+            local key = e.b.t and ("boss:" .. e.id)
+            local voiced = key and ns.Voice.Get(key) ~= nil and not ns.settings.journalOnly
+            rows[#rows + 1] = { title = e.b.n, from = e.b.t, keys = voiced and { key } or nil, icon = SKULL }
+        else
+            left = left + 1
+        end
+    end
+    if #rows == 0 and ns.settings.hideUnfound then return y, n end
+    y, n = placeTodos({ L["Bosses"] }, y, n, pw, nil, true)
+    y, n = placeTodos(rows, y, n, pw)
+    -- (a dungeon finished before bosses were kept count of has them all: Endings.lua takes them in at login; the user,
+    -- 2026-11-07: "says 6 more tyo find in a dungeon ive been with")
+    if left > 0 and not ns.settings.hideUnfound then
+        local line = #rows == 0 and L["Beat its bosses and the narrator tells who they were."]
+            or (L["%d more to find"]):format(left)
+        y, n = placeTodos({ { title = "|cff7a6a55" .. line .. "|r" } }, y, n, pw)
+    end
+    return y - 10, n
+end
+
+-- the painting across the top of a dungeon's page, with its name and levels written on it at dusk
+local function dungeonBanner()
+    local b = header.banner
+    if b then return b end
+    local white = "Interface\\Buttons\\WHITE8x8"
+    b = CreateFrame("Frame", nil, page, "BackdropTemplate")
+    header.banner = b
+    b:SetPoint("TOPLEFT", 0, 0); b:SetHeight(BANNER_H)
+    b:SetFrameLevel(page:GetFrameLevel() + 1)
+    if b.SetBackdrop then
+        b:SetBackdrop({ bgFile = white, edgeFile = white, edgeSize = 1 })
+        b:SetBackdropColor(0.05, 0.04, 0.03, 1)
+        b:SetBackdropBorderColor(0.45, 0.33, 0.16, 1)
+    end
+    b.art = b:CreateTexture(nil, "BORDER")
+    b.art:SetPoint("TOPLEFT", 1, -1); b.art:SetPoint("BOTTOMRIGHT", -1, 1)
+    b.dusk = b:CreateTexture(nil, "ARTWORK")
+    b.dusk:SetPoint("BOTTOMLEFT", 1, 1); b.dusk:SetPoint("BOTTOMRIGHT", -1, 1); b.dusk:SetHeight(math.floor(BANNER_H * 0.62))
+    b.dusk:SetTexture(white)
+    if not (b.dusk.SetGradient and CreateColor and pcall(b.dusk.SetGradient, b.dusk, "VERTICAL",
+            CreateColor(0.03, 0.02, 0.01, 0.92), CreateColor(0.03, 0.02, 0.01, 0))) then
+        b.dusk:SetVertexColor(0.03, 0.02, 0.01, 0.45)
+    end
+    b.name = b:CreateFontString(nil, "OVERLAY", "QuestTitleFont")
+    b.name:SetPoint("BOTTOMLEFT", 14, 30); b.name:SetPoint("RIGHT", b, "RIGHT", -130, 0); b.name:SetJustifyH("LEFT")
+    local font, size, flags = b.name:GetFont()
+    if font then b.name:SetFont(font, math.floor((size or 18) * 1.35 + 0.5), flags) end
+    b.name:SetTextColor(1, 0.86, 0.55); b.name:SetShadowColor(0, 0, 0, 1); b.name:SetShadowOffset(1, -1)
+    b.sub = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    b.sub:SetPoint("TOPLEFT", b.name, "BOTTOMLEFT", 1, -5); b.sub:SetJustifyH("LEFT")
+    b.sub:SetTextColor(0.92, 0.86, 0.74); b.sub:SetShadowColor(0, 0, 0, 1); b.sub:SetShadowOffset(1, -1)
+    return b
+end
+
 local function renderDungeon(d)
     local pw = page:GetWidth()
     hideAll()
@@ -1589,13 +1996,31 @@ local function renderDungeon(d)
         page:SetHeight(120)
         return
     end
-    header.title:SetText(ns.zoneLocal(d.name))
     local sub = levels(d)
     if d.cleared then
-        local when = (L["Cleared %s"]):format(ns.Date(d.cleared))
+        -- 0: the game counts its last boss killed, Chronicle never saw when
+        local when = d.cleared > 0 and (L["Cleared %s"]):format(ns.Date(d.cleared)) or L["Cleared"]
         sub = sub ~= "" and (sub .. "  ·  " .. when) or when
     end
-    header.sub:SetText(sub)
+    -- its painting, the name and levels on it; the plain title where the game has none for it
+    local art, top = ART[d.name], 50
+    if art then
+        local b = dungeonBanner()
+        b:SetWidth(pw - 10)
+        if b.art:SetTexture(art) == false then art = nil end
+    end
+    if art then
+        local b = header.banner
+        b.art:SetTexCoord(artCoords(art, pw - 12, BANNER_H - 2))
+        b.name:SetText(ns.zoneLocal(d.name)); b.sub:SetText(sub)
+        b:Show()
+        header.title:Hide(); header.sub:Hide()
+        top = BANNER_H + 14
+        header.intro:ClearAllPoints(); header.intro:SetPoint("TOPLEFT", 0, -top)
+    else
+        header.title:SetText(ns.zoneLocal(d.name))
+        header.sub:SetText(sub)
+    end
     header.intro:SetWidth(pw - 10)
     header.intro:SetText(d.intro or "")
     -- how it ends: only the wings you have finished
@@ -1609,9 +2034,14 @@ local function renderDungeon(d)
     local keys = { d.key }
     for _, e in ipairs(ends) do keys[#keys + 1] = "dend:" .. e.wing .. "|" .. e.boss end
     listenButton(keys, L["Listen"])
-    local y, n = -(54 + header.intro:GetStringHeight() + 18), 1
+    if art then -- Listen on the painting, beside its name
+        header.recap:ClearAllPoints(); header.recap:SetPoint("BOTTOMRIGHT", header.banner, "BOTTOMRIGHT", -10, 10)
+        header.recap:SetFrameLevel(header.banner:GetFrameLevel() + 2)
+    end
+    local y, n = -(top + 4 + header.intro:GetStringHeight() + 18), 1
+    y, n = placeDungeonQuests(d, y, n, pw)
     if #d.chapters > 0 then
-        y, n = placeTodos({ L["Chapters"] }, y, n, pw)
+        y, n = placeTodos({ L["Chapters"] }, y, n, pw, nil, true)
         for _, ch in ipairs(d.chapters) do
             local q
             if ch.locked then
@@ -1628,7 +2058,8 @@ local function renderDungeon(d)
             y, n = placeTodos({ q }, y, n, pw)
         end
     end
-    y, n = placeTodos({ L["How it ends"] }, y, n, pw)
+    y, n = placeBosses(d, y, n, pw)
+    y, n = placeTodos({ L["How it ends"] }, y, n, pw, nil, true)
     if #ends > 0 then
         for _, e in ipairs(ends) do
             local wing = e.wing ~= d.name and ("|cff7a4b12" .. e.wing:match(": (.+)$") .. ":|r ") or ""
@@ -2162,8 +2593,8 @@ end
 -- ---------------------------------------------------------------- render: places
 -- Every named place this character has walked into (Areas.lua: the narrator's line the first time), land by land, the
 -- lands you were in last first: click one to hear it again (the user wanted "an overview of stuff i forgot"; the
--- places sat only at the bottom of each zone's page). Places not visited yet are only counted. From the voice packs:
--- the lines are spoken only, so there are none without the voices.
+-- places sat only at the bottom of each zone's page). Places not visited yet are only counted, or named with Show
+-- what's left. From the voice packs: the lines are spoken only, so there are none without the voices.
 local function placeBook()
     local byZone, lands, found, total = {}, {}, 0, 0
     local seen = ns.char.areaSeen or {}
@@ -2181,10 +2612,16 @@ local function placeBook()
                 found = found + 1
                 l.seen[#l.seen + 1] = { key = key, name = place }
                 l.last = math.max(l.last, type(seen[key]) == "number" and seen[key] or 1)
+            else
+                l.missing = l.missing or {}
+                l.missing[#l.missing + 1] = place
             end
         end
     end
-    for _, l in ipairs(lands) do table.sort(l.seen, function(a, b) return a.name < b.name end) end
+    for _, l in ipairs(lands) do
+        table.sort(l.seen, function(a, b) return a.name < b.name end)
+        if l.missing then table.sort(l.missing) end
+    end
     table.sort(lands, function(a, b)
         if a.last ~= b.last then return a.last > b.last end
         return a.zone < b.zone
@@ -2206,9 +2643,12 @@ local function renderPlaces()
         and L["Every named place you have walked into, land by land, as the narrator told it the first time. Click one to hear it again."]
         or L["Walk into the named places of a land (a village, a mine, an old ruin) and the narrator tells you about them. They gather here."])
     local y, n = -(54 + header.intro:GetStringHeight() + 16), 1
-    -- only the lands where you have heard of a place: what the narrator said of each, to read, and to hear again
+    -- only the lands where you have heard of a place: what the narrator said of each, to read, and to hear again. With
+    -- Show what's left, the ones still to find by name too, in the lands you have been to (a player on CurseForge: "I'm
+    -- at 20/22 Places for Elwynn ... and cannot for the life of me figure out where the remaining 2 places are")
+    local left = ns.settings.showLeft and not hide
     for _, l in ipairs(pb.lands) do
-        if #l.seen > 0 then
+        if #l.seen > 0 or (left and ns.char.zoneSeen and ns.char.zoneSeen[l.zone]) then
             y, n = placeTodos({ hide and ("%s  (%d)"):format(ns.zoneLocal(l.zone), #l.seen)
                 or ("%s  (%d/%d)"):format(ns.zoneLocal(l.zone), #l.seen, l.total) }, y, n, pw)
             local items = {}
@@ -2216,10 +2656,81 @@ local function renderPlaces()
                 items[#items + 1] = { title = p.name, from = ns.Voice.Subtitle(p.key) or L["Click to hear it"],
                     keys = { p.key }, icon = "Interface\\Icons\\INV_Misc_Map_01" }
             end
-            local left = l.total - #l.seen
-            if left > 0 and not hide then
-                items[#items + 1] = { title = "|cff8f8676" .. (left == 1 and L["1 more place to find here"]
-                    or (L["%d more places to find here"]):format(left)) .. "|r" }
+            local more = l.total - #l.seen
+            if more > 0 and not hide then
+                items[#items + 1] = { title = "|cff8f8676" .. (more == 1 and L["1 more place to find here"]
+                    or (L["%d more places to find here"]):format(more)) .. "|r",
+                    from = left and l.missing and table.concat(l.missing, ", ") or nil }
+            end
+            y, n = placeTodos(items, y, n, pw)
+            y = y - 10
+        end
+    end
+    page:SetHeight(-y + 20)
+end
+
+-- ---------------------------------------------------------------- render: peoples and callings
+-- Where each people of Azeroth comes from and what each calling asks of those who take it up (lore_out/peoples.json,
+-- read by the narrator; the user's idea, 2026-11-07): your own race and class first, then the others. The words are on
+-- the page, so they are there without the voices too.
+local PEOPLE_ICON = { Skyborne = "Interface\\Icons\\Spell_Nature_Cyclone" }
+
+local function peopleBook()
+    local all = (ns.Lore and ns.Lore.peoples) or {}
+    local _, race = UnitRace("player")
+    local _, class = UnitClass("player")
+    local own, races, classes = {}, {}, {}
+    for _, p in ipairs(all) do
+        if p.id == "race:" .. tostring(race) then table.insert(own, 1, p)
+        elseif p.id == "class:" .. tostring(class) then own[#own + 1] = p
+        elseif p.id:match("^race:") then races[#races + 1] = p
+        else classes[#classes + 1] = p end
+    end
+    return { own = own, races = races, classes = classes, total = #all }
+end
+
+-- a race's or class's icon from the game's own atlases (raceicon-human-male, classicon-warrior), else a plain one
+local function peopleIcon(item, p)
+    local kind, token = p.id:match("^(%a+):(.+)$")
+    local atlas
+    if kind == "race" then
+        local name = token:lower() == "scourge" and "undead" or token:lower()
+        atlas = ("raceicon-%s-%s"):format(name, ns.female and "female" or "male")
+    else
+        atlas = "classicon-" .. token:lower()
+    end
+    if C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas) then item.atlas = atlas
+    else item.icon = PEOPLE_ICON[token] or "Interface\\Icons\\INV_Misc_Book_07" end
+    return item
+end
+
+local function renderPeoples(id)
+    local pw = page:GetWidth()
+    local width = pw - 10
+    hideAll()
+    header.title:Show(); header.sub:Show(); header.intro:Show()
+    local book = peopleBook()
+    local cur
+    for _, p in ipairs((ns.Lore and ns.Lore.peoples) or {}) do if p.id == id then cur = p end end
+    cur = cur or book.own[1] or book.races[1] or book.classes[1]
+    if not cur then
+        header.title:SetText(L["Peoples and Callings"]); header.sub:SetText(""); header.intro:SetText("")
+        page:SetHeight(120)
+        return
+    end
+    header.title:SetText(cur.title)
+    header.sub:SetText(L["Peoples and Callings"])
+    listenButton({ cur.id }, L["Listen"])
+    header.intro:SetWidth(width)
+    header.intro:SetText(cur.text)
+    local y, n = -(54 + header.intro:GetStringHeight() + 16), 1
+    for _, part in ipairs({ { L["Yours"], book.own }, { L["Peoples"], book.races }, { L["Callings"], book.classes } }) do
+        if #part[2] > 0 then
+            local items = { part[1] }
+            for _, p in ipairs(part[2]) do
+                local here = p.id == cur.id
+                items[#items + 1] = peopleIcon({ title = here and ("|cff8f8676%s|r"):format(p.title) or p.title,
+                    fn = not here and function() J.Select("people:" .. p.id) end or nil }, p)
             end
             y, n = placeTodos(items, y, n, pw)
             y = y - 10
@@ -2232,7 +2743,8 @@ end
 -- The Bestiary tab: what the people of each land have told this character about its creatures (Bestiary.lua; a
 -- player's idea, after Diablo III's bestiary; thanks Heybarbaruiva). The list holds the lands and the creatures met in
 -- each; the overview shows how much of every land is told, and a creature's page its model, who tells of it, the kills
--- and its entries, to hear again and to read. Creatures not met yet are only counted, never named or shown.
+-- and its entries, to hear again and to read. Creatures not met yet are only counted, or named in the list with Show
+-- what's left; never shown.
 local function beastBook()
     return ns.Bestiary and ns.Bestiary.Book() or { zones = {}, found = 0, total = 0, met = 0 }
 end
@@ -2537,7 +3049,7 @@ local function renderChronicle()
     local items = {}
     for _, c in ipairs(cleared) do
         local name = c.wing:gsub("^([^:]+)", function(d) return ns.zoneLocal(d) end)
-        items[#items + 1] = { text = name, tip = (L["Cleared %s"]):format(ns.Date(c.t)) }
+        items[#items + 1] = { text = name, tip = c.t > 0 and (L["Cleared %s"]):format(ns.Date(c.t)) or L["Cleared"] }
     end
     badges(L["Dungeons & Raids"], items)
     items = {}
@@ -2725,6 +3237,17 @@ local function renderList()
                 if r.diamond then r.count:SetText(tostring(pb.found)); r.chapter = nil end
             end
         end
+        -- Peoples and Callings: every race and class, yours first (to read, and to hear with the voices)
+        if filter == "" then
+            local book = peopleBook()
+            if book.total > 0 then
+                local r = row("chapter")
+                card(r, "peoples", L["Peoples and Callings"], L["Your people and your calling"], 0, 0, false)
+                r.sel:SetShown(selected == "peoples" or (selected or ""):sub(1, 7) == "people:")
+                r.bar:SetShown(false)
+                if r.diamond then r.count:SetText(""); r.chapter = nil end
+            end
+        end
         -- chapters arrive grouped by zone; collect the runs first so each header knows its count
         local runs = {}
         for _, ch in ipairs(chapters) do
@@ -2831,7 +3354,12 @@ local function renderList()
                 zoneHeader(row("head"), "dungeons", group[1], #inGroup, open)
                 if open then
                     for _, d in ipairs(inGroup) do
-                        card(row("chapter"), d.key, ns.zoneLocal(d.name), levels(d), d.done, d.total, d.cleared ~= nil)
+                        -- the check when all of it is done: its last boss and its quests (it was the last boss alone,
+                        -- beside "3 of 6 quests done"; the user, 2026-11-07); the hover says when it was cleared
+                        local r = row("chapter")
+                        card(r, d.key, ns.zoneLocal(d.name), levels(d), d.done, d.total,
+                            d.cleared ~= nil and d.done >= d.total)
+                        if r.chapter then r.chapter.dungeon, r.chapter.cleared = true, d.cleared end
                     end
                 end
             end
@@ -2871,6 +3399,16 @@ local function renderList()
                         c.title:SetText("|cff8f8676" .. (z.unmet == 1 and L["1 more creature to find here"]
                             or (L["%d more creatures to find here"]):format(z.unmet)) .. "|r")
                         c.sub:SetText(""); c.sel:Hide()
+                        -- Show what's left: which ones, a row each (a player on CurseForge, who couldn't find the last
+                        -- places of a land: "And maybe for the Bestiary too?")
+                        if ns.settings.showLeft then
+                            for _, name in ipairs(z.unmetNames or {}) do
+                                local m = row("person")
+                                m.key = nil; m:EnableMouse(false)
+                                if m.stripe then m.stripe:Hide() end
+                                m.title:SetText("|cff8f8676" .. name .. "|r"); m.sub:SetText(""); m.sel:Hide()
+                            end
+                        end
                     end
                 end
             end
@@ -3008,6 +3546,8 @@ function J.Refresh()
         renderList(); renderLibrary(); showBack()
     elseif tab == "story" and selected == "places" then
         renderList(); renderPlaces(); showBack()
+    elseif tab == "story" and selected and (selected == "peoples" or selected:match("^people:")) then
+        renderList(); renderPeoples(selected:match("^people:(.+)$")); showBack()
     elseif tab == "story" and selected and selected:match("^area:") then
         renderList(); renderZone(selected:sub(6)); showBack()
     elseif tab == "story" and selected and selected:match("^books:") then
@@ -3507,6 +4047,16 @@ function J.ShowAttunements(id)
     frame:Show()
     J.SetTab("attune", true)
     if id then selected = "att:" .. id end
+    J.Refresh()
+    pageScroll:SetVerticalScroll(0)
+end
+
+-- Open the journal on a dungeon's page (its notes' Journal button: walking in, a boss beaten, its end).
+function J.ShowDungeon(name)
+    if not frame then create() end
+    frame:Show()
+    J.SetTab("dungeons", true)
+    selected = "dng:" .. name
     J.Refresh()
     pageScroll:SetVerticalScroll(0)
 end

@@ -73,7 +73,7 @@ end
 local function bookGroup(book, byZone, gid, g)
     local z = byZone[g.zone]
     if not z then
-        z = { zone = g.zone, groups = {}, found = 0, total = 0, unmet = 0 }
+        z = { zone = g.zone, groups = {}, found = 0, total = 0, unmet = 0, unmetNames = {} }
         byZone[g.zone] = z; book.zones[#book.zones + 1] = z
     end
     local kills = B.Kills(gid)
@@ -93,6 +93,8 @@ local function bookGroup(book, byZone, gid, g)
             nextNeed = nextNeed, total = #(g.need or {}) }
     else
         z.unmet = z.unmet + 1
+        -- named only with Show what's left (a player on CurseForge: "And maybe for the Bestiary too?")
+        z.unmetNames[#z.unmetNames + 1] = g.name
     end
 end
 
@@ -103,7 +105,10 @@ function B.Book()
     for gid, g in pairs((d and d.groups) or {}) do
         if B.Mine(g) then bookGroup(book, byZone, gid, g) end
     end
-    for _, z in ipairs(zones) do table.sort(z.groups, function(a, b) return a.name < b.name end) end
+    for _, z in ipairs(zones) do
+        table.sort(z.groups, function(a, b) return a.name < b.name end)
+        table.sort(z.unmetNames)
+    end
     table.sort(zones, function(a, b)
         if (a.found > 0) ~= (b.found > 0) then return a.found > 0 end
         return a.zone < b.zone

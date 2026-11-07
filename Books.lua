@@ -1,4 +1,5 @@
--- Chronicle / Books: the narrator reads letters, books and plaques. Each page ships a short phrase
+-- Chronicle / Books: the narrator reads letters, books and plaques (a letter signed by someone with a voice of their
+-- own is read by them, which the voice packs say: nothing to do here). Each page ships a short phrase
 -- (Data\Lore.lua "books") matched against the page on screen; pages nobody has voiced yet are recorded.
 local _, ns = ...
 local L = ns.L

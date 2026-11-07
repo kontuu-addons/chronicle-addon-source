@@ -81,6 +81,10 @@ function V.Subtitle(key)
         for _, e in ipairs(l.legends or {}) do if e.id == legend then return e.text end end
         return nil
     end
+    if key:match("^race:") or key:match("^class:") then -- the journal's Peoples and Callings
+        for _, e in ipairs(l.peoples or {}) do if e.id == key then return e.text end end
+        return nil
+    end
     local rare = tonumber(key:match("^rare:(%d+)$") or "")
     if rare then return l.rares and l.rares[rare] and l.rares[rare].text end
     if key:match("^hum:") then return nil end -- your own character humming: nothing to read
@@ -100,6 +104,8 @@ function V.Subtitle(key)
     end
     local dname, boss = key:match("^dend:(.+)|(.+)$")
     if dname then return l.dungeonEnd and l.dungeonEnd[dname] and l.dungeonEnd[dname][boss] end
+    local bid = tonumber(key:match("^boss:(%d+)$") or "")
+    if bid then return l.bosses and l.bosses[bid] and l.bosses[bid].t end
     local arc = key:match("^arc:(.+)")
     if arc then
         for _, a in ipairs(l.arcs or {}) do if a.id == arc then return a.intro end end
