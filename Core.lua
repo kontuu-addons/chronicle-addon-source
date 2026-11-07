@@ -94,6 +94,8 @@ local DEFAULTS = {
     minimap = true,      -- minimap button
     minimapFree = false, -- the button anywhere on the screen instead of on the minimap edge
     zoneRecap = true,    -- "Previously in <zone>" when returning to a zone
+    dungeonStory = true, -- a dungeon's notes: walking in, who a boss was the first time you beat it, how it ends (they
+                         -- were under "Previously in..." until 1.1.3: turning that off hid them too)
     zoneIntro = true,    -- "Welcome to <zone>" the first time you enter a zone
     areaIntros = true,   -- a line about a named place in a zone (Bloodhoof Village) the first time you enter it
     skipHeard = true,    -- don't auto-play a line this character has already heard

@@ -56,6 +56,8 @@ local function allowed(key)
         local ends = ns.Lore and ns.Lore.dungeonEnd and ns.Lore.dungeonEnd[dungeon]
         return (ends and ends[boss] ~= nil and (ns.char.dungeonsDone or {})[dungeon] ~= nil) or false
     end
+    local bid = tonumber(key:match("^boss:(%d+)$") or "")
+    if bid then return ns.Endings ~= nil and ns.Endings.Beaten(bid) end -- who a boss was: once this character beat it
     return true -- greetings, books, zone welcomes, dungeon welcomes, campfire tales, legends: nothing to spoil
 end
 

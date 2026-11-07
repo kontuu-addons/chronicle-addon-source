@@ -315,7 +315,10 @@ end
 -- flag, so finishing one marks them all. A copy actually done wins; otherwise the one in this character's
 -- starting zone (or the first). Copies only known from the flag are forgotten.
 local START_ZONE = { Human = "Elwynn Forest", Dwarf = "Dun Morogh", Gnome = "Dun Morogh", NightElf = "Teldrassil",
-                     Orc = "Durotar", Troll = "Durotar", Scourge = "Tirisfal Glades", Tauren = "Mulgore" }
+                     Orc = "Durotar", Troll = "Durotar", Scourge = "Tirisfal Glades", Tauren = "Mulgore",
+                     Skyborne = "Zephras Isle" }
+local STARTS = {}
+for _, z in pairs(START_ZONE) do STARTS[z] = true end
 
 -- quests from chapters that belong to the other faction: Forever starting-zone quests share a completed flag
 -- with their twin elsewhere, so the game reports them done for characters who never saw them
@@ -373,10 +376,13 @@ local function dropTwins()
                 end
             end
             keep = keep or list[1]
-            -- twins live in different starting zones; two quests with one title in the same zone are two parts of a
-            -- chain ("Delicate Instruments" in Elwynn), both kept
+            -- twins live in different starting zones; two quests with one title anywhere else are two parts of a
+            -- chain, both kept: in the same zone ("Delicate Instruments" in Elwynn), and across zones too (A Lesson in
+            -- Divinity goes from Tirisfal to the Undercity and back: a player new to Chronicle saw it at 5 of 7 when it
+            -- was done, its Undercity steps dropped as copies; thanks drazzan on CurseForge)
             for _, i in ipairs(list) do
-                if i ~= keep and flagOnly(i) and zoneOf(i) ~= zoneOf(keep) then drop[i] = true end
+                local z, kz = zoneOf(i), zoneOf(keep)
+                if i ~= keep and flagOnly(i) and z ~= kz and STARTS[z] and STARTS[kz] then drop[i] = true end
             end
         end
     end
@@ -399,6 +405,8 @@ end
 local function scanCompleted()
     -- beta.14: older versions also dropped parts of a chain that share a title; forget those once so they come back
     if not ns.char.twinsV2 then ns.char.twins, ns.char.twinsV2 = nil, true end
+    -- 1.1.3: chain steps across zones were dropped as copies too (A Lesson in Divinity's Undercity steps): once more
+    if not ns.char.twinsV3 then ns.char.twins, ns.char.twinsV3 = nil, true end
     ns.db.noTitle = ns.db.noTitle or {}
     noTitle = ns.db.noTitle
     if not (C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted) then return end

@@ -85,6 +85,17 @@ function ChronicleQuestPinMixin:OnMouseEnter()
 end
 function ChronicleQuestPinMixin:OnMouseLeave() GameTooltip:Hide() end
 
+-- the quests before one: "a" or "a,b" when any one of them opens it (each side's In Search of Anthion before Dead
+-- Man's Plea), negative for one to have in the log; prev is the first, prevs all of them
+local function prevsOf(field)
+    local prevs = {}
+    for p in (field or ""):gmatch("-?%d+") do
+        local n = tonumber(p)
+        if n and n ~= 0 then prevs[#prevs + 1] = n end
+    end
+    return prevs[1], #prevs > 0 and prevs or nil
+end
+
 local decoded = {}
 local function zoneData(zone)
     local d = decoded[zone]
@@ -93,8 +104,9 @@ local function zoneData(zone)
     local l = ns.Lore or {}
     for line in ((l.qmarks or {})[zone] or ""):gmatch("[^\n]+") do
         local id, lvl, min, races, classes, prev, x, y, t = strsplit("\t", line)
+        local first, prevs = prevsOf(prev)
         d.givers[#d.givers + 1] = { id = tonumber(id), lvl = tonumber(lvl), min = tonumber(min), races = tonumber(races),
-            classes = tonumber(classes), prev = tonumber(prev), x = tonumber(x), y = tonumber(y), t = t }
+            classes = tonumber(classes), prev = first, prevs = prevs, x = tonumber(x), y = tonumber(y), t = t }
     end
     for line in ((l.qends or {})[zone] or ""):gmatch("[^\n]+") do
         local id, x, y = strsplit("\t", line)
@@ -114,6 +126,18 @@ local function inLog(id)
     return ok and idx ~= nil
 end
 local function fits(mask, bitValue) return not mask or mask == 0 or bit.band(mask, bitValue) ~= 0 end
+-- a quest's races and this character: the eight races of old by their own bit, a new race (the Skyborne, whose race
+-- number is past the old masks' bits) by its side, as the journal does. By bit alone a Skyborne fitted no quest that
+-- names its races or side, and their map showed hardly a "!"
+local ALLIANCE, HORDE = 1 + 4 + 8 + 64, 2 + 16 + 32 + 128
+local function raceFits(mask)
+    if not mask or mask == 0 then return true end
+    local race = select(3, UnitRace("player")) or 1
+    if race <= 8 then return bit.band(mask, 2 ^ (race - 1)) ~= 0 end
+    local side = UnitFactionGroup("player")
+    local sideMask = side == "Alliance" and ALLIANCE or side == "Horde" and HORDE or nil
+    return sideMask == nil or bit.band(mask, sideMask) ~= 0
+end
 
 -- every quest the marker data knows, whatever the zone: level, limits, title and where its giver stands
 local questIndex
@@ -136,8 +160,9 @@ function M.QuestInfo(id)
     local line = questIndex[id]
     if not line then return nil end
     local _, lvl, min, races, classes, prev, x, y, t = strsplit("\t", line)
+    local first, prevs = prevsOf(prev)
     q = { lvl = tonumber(lvl), min = tonumber(min), races = tonumber(races), classes = tonumber(classes),
-        prev = tonumber(prev), x = tonumber(x), y = tonumber(y), t = t, zone = questZone[id] }
+        prev = first, prevs = prevs, x = tonumber(x), y = tonumber(y), t = t, zone = questZone[id] }
     questDecoded[id] = q
     return q
 end
@@ -205,9 +230,8 @@ end
 function M.ForMe(id)
     local q = M.QuestInfo(id)
     if not q then return true end
-    local raceBit = 2 ^ ((select(3, UnitRace("player")) or 1) - 1)
     local classBit = 2 ^ ((select(3, UnitClass("player")) or 1) - 1)
-    return fits(q.races, raceBit) and fits(q.classes, classBit)
+    return raceFits(q.races) and fits(q.classes, classBit)
 end
 
 local function questieRunning()
@@ -264,7 +288,6 @@ end
 
 local function addQuestPins(map, zone)
     local level = UnitLevel("player") or 1
-    local raceBit = 2 ^ ((select(3, UnitRace("player")) or 1) - 1)
     local classBit = 2 ^ ((select(3, UnitClass("player")) or 1) - 1)
     local d = zoneData(zone)
     local spots, order = {}, {}
@@ -296,8 +319,10 @@ local function addQuestPins(map, zone)
         if type(q.t) == "string" and taken[q.t:lower()] then return end
         -- one of a group of which only one can be done (Little Pamela or Sister Pamela): gone once you took another
         if ns.Journal and ns.Journal.SiblingTaken and ns.Journal.SiblingTaken(q.id) then return end
-        -- a breadcrumb (Rejold's New Brew): the game stops offering it once the quest it leads to is taken or done
-        local to = ns.Lore and ns.Lore.breadcrumb and ns.Lore.breadcrumb[q.id]
+        -- a breadcrumb (Rejold's New Brew), or a "speak with" step that leads to another quest: the game stops offering
+        -- it once the quest it leads to is taken or done
+        local l = ns.Lore or {}
+        local to = (l.breadcrumb and l.breadcrumb[q.id]) or (l.leadsTo and l.leadsTo[q.id])
         if to and (flagged(to) or inLog(to)) then return end
         -- a new Forever quest nobody has seen the level of: it may need a higher level, an earlier quest or another
         -- class, so it only shows once the game has offered it to this character
@@ -305,13 +330,19 @@ local function addQuestPins(map, zone)
         if q.min and q.min > level then return end
         if q.lvl and q.lvl > 0 and q.lvl < level - 7 then return end -- long outgrown: keeps the map calm
         if q.lvl and q.lvl > level + 5 then return end                -- far too hard for now (some have no real minimum)
-        if not (fits(q.races, raceBit) and fits(q.classes, classBit)) then return end
+        if not (raceFits(q.races) and fits(q.classes, classBit)) then return end
         -- a profession's own quest ("Camping 101: Mining"): only for those who have it
         local prof = ns.Lore and ns.Lore.optional and ns.Lore.optional[q.id]
         if type(prof) ~= "string" then prof = type(q.t) == "string" and q.t:match("^Camping 101: (.+)$") end -- other copies of it
         if type(prof) == "string" and ns.Journal and ns.Journal.HasProfession and not ns.Journal.HasProfession(prof) then return end
-        if q.prev and q.prev > 0 and not flagged(q.prev) then return end
-        if q.prev and q.prev < 0 and not inLog(-q.prev) then return end
+        -- what must come first: any one of the quests before it (done, or in the log for a negative one)
+        if q.prevs then
+            local open = false
+            for _, p in ipairs(q.prevs) do
+                if (p > 0 and flagged(p)) or (p < 0 and inLog(-p)) then open = true break end
+            end
+            if not open then return end
+        end
         table.insert(spot(q.x, q.y, false, personName(q.id, "giverOf")).quests, q)
     end
     for _, q in ipairs(d.givers) do consider(q) end

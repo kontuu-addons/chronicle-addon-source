@@ -136,38 +136,154 @@ local function zoneOfQuest(id)
 end
 
 -- ---------------------------------------------------------------- dungeons
--- ENCOUNTER_END names the boss; a dungeon (or a wing of it, "Dire Maul: West") ends with a known final boss.
+-- ENCOUNTER_END gives the encounter's id and name. Lore bosses has every boss of every dungeon and raid by that id,
+-- from the game's own table: where it is and its English name, whatever the client's language. A boss with a story
+-- gets a word from the narrator the first time this character beats it (the user, 2026-11-07: "where is all the boss
+-- lore ? and it doesnt talk about the boss after i kille them"); a dungeon (or a wing of it, "Dire Maul: West")
+-- ends with its final boss.
+
+-- a boss by its encounter id, and the id it is kept under (another difficulty's id points to the boss's own)
+local function bossOf(id)
+    local all = ns.Lore and ns.Lore.bosses
+    local b = all and type(id) == "number" and all[id] or nil
+    if b and b.a then id, b = b.a, all[b.a] end
+    return b, id
+end
+E.BossOf = bossOf
+
+local function wingOf(name, dungeon) return name == dungeon or name:sub(1, #dungeon + 2) == dungeon .. ": " end
+
+-- the wing a boss ends, its ending and the boss as the ending knows it (names as the game's table spells them:
+-- "C'thun")
 local function dungeonEnding(dungeon, boss)
     local ends = ns.Lore and ns.Lore.dungeonEnd
     if not ends then return nil end
+    boss = boss:lower()
     for name, bosses in pairs(ends) do
-        if (name == dungeon or name:sub(1, #dungeon + 2) == dungeon .. ": ") and bosses[boss] then
-            return name, bosses[boss]
+        if wingOf(name, dungeon) then
+            for b, text in pairs(bosses) do
+                if b:lower() == boss then return name, text, b end
+            end
         end
     end
 end
 
-local function onEncounterEnd(_, boss, _, _, success)
-    if canaccessvalue and not canaccessvalue(boss) then return end
-    if canaccessvalue and not canaccessvalue(success) then return end
+-- The game keeps a count of each dungeon's last boss killed (Statistics, on the character window: "Rath'mael Kills
+-- (Ruins of Lordaeron)"), none of the other bosses (the user, 2026-11-07: "isnt that tracked in wow already?"). A
+-- kill Chronicle didn't see, on another client language or before it was installed, still counts from there.
+local function killedByStats(b)
+    if not (b and b.s and GetStatistic) then return false end
+    for _, s in ipairs(b.s) do
+        local ok, n = pcall(GetStatistic, s)
+        if ok and (tonumber(n) or 0) > 0 then return true end
+    end
+    return false
+end
+
+-- has this character beaten that boss: kept since boss lore came (1.1.3), the game's count of it, or the last boss of
+-- a wing it finished
+function E.Beaten(id)
+    local b, main = bossOf(id)
+    if not b then return false end
+    if (ns.char.bosses and ns.char.bosses[main]) or killedByStats(b) then return true end
+    for wing, t in pairs(ns.char.dungeonsDone or {}) do
+        if t and wingOf(wing, b.d) and select(3, dungeonEnding(wing, b.n)) then return true end
+    end
+    return false
+end
+
+-- the bosses of a wing ("Dire Maul: West": those of the West), or of a whole dungeon that has no wings, by their ids
+local function wingBosses(wing)
+    local dungeon, part = wing:match("^(.-): (.+)$")
+    dungeon = dungeon or wing
+    local out = {}
+    for id, b in pairs((ns.Lore and ns.Lore.bosses) or {}) do
+        if b.d == dungeon and (part == nil or b.w == part) then out[#out + 1] = id end
+    end
+    return out
+end
+
+-- A wing finished before bosses were kept count of (or that only the game counts): its last boss is behind the others,
+-- so they were beaten on the way (the user, 2026-11-07: "if they have killed the last boss, they should have killed the
+-- other bosses aswel right?"). 0: when is not known; the first kill Chronicle sees still gets its note.
+local function takeFinished(wing)
+    ns.char.bosses = ns.char.bosses or {}
+    for _, id in ipairs(wingBosses(wing)) do
+        if ns.char.bosses[id] == nil then ns.char.bosses[id] = 0 end
+    end
+end
+
+-- A wing whose last boss the game counts as killed, but Chronicle never saw it: finished, when is not known (0), with
+-- all its bosses (the user: "if people get the update now, and they are high level they dont see the bosses they
+-- already killed on lower levels"). A dungeon without wings whose one counted boss isn't the one its ending waits for
+-- (Ragefire Chasm: the game counts Bazzalan, the story ends with Taragaman) is finished all the same; one with
+-- several counted bosses (Shaper's Terrace) is left to the kills Chronicle sees.
+local function finishedByStats()
+    local all = ns.Lore and ns.Lore.bosses
+    if not all then return end
+    local ends, counted, winged = (ns.Lore.dungeonEnd or {}), {}, {}
+    for name in pairs(ends) do
+        local d = name:match("^(.-): ")
+        if d then winged[d] = true end
+    end
+    for _, b in pairs(all) do
+        if b.s and b.d then counted[b.d] = (counted[b.d] or 0) + 1 end
+    end
+    ns.char.dungeonsDone = ns.char.dungeonsDone or {}
+    for _, b in pairs(all) do
+        if b.s and b.d and killedByStats(b) then
+            local wing = dungeonEnding(b.d, b.n)
+            if not wing and not winged[b.d] and counted[b.d] == 1 then
+                wing = b.d
+            end
+            if wing then
+                if ends[wing] and not ns.char.dungeonsDone[wing] then ns.char.dungeonsDone[wing] = 0 end
+                takeFinished(wing)
+            end
+        end
+    end
+end
+E.FromStats = finishedByStats
+
+local function onEncounterEnd(id, boss, success)
+    if canaccessvalue and not (canaccessvalue(id) and canaccessvalue(boss) and canaccessvalue(success)) then return end
     if success ~= 1 or type(boss) ~= "string" then return end
     local inInstance = IsInInstance()
     if not inInstance then return end
-    local dungeon = ns.zoneEN(ns.clean(GetRealZoneText()))
+    local b, main = bossOf(id)
+    local dungeon = b and b.d or ns.zoneEN(ns.clean(GetRealZoneText()))
     if not dungeon then return end
+    boss = b and b.n or boss
     -- the last boss a group killed in each dungeon, kept for /lore share: how we learn new dungeons' final bosses
     ns.db.lastBoss = ns.db.lastBoss or {}
     ns.db.lastBoss[dungeon] = boss
-    local name, text = dungeonEnding(dungeon, boss)
-    if not name then return end
-    ns.char.dungeonsDone = ns.char.dungeonsDone or {}
-    ns.char.dungeonsDone[name] = time()
-    if ns.settings.zoneRecap ~= false and ns.Reminder then
-        local title = (L["%s: the end"]):format((name:gsub("^([^:]+)", function(d) return ns.zoneLocal(d) end)))
-        C_Timer.After(4, function()
-            ns.Reminder.ShowStory(title, text, { "dend:" .. name .. "|" .. boss }, nil, nil, "zoneRecap")
-        end)
+    local first = false
+    if b then
+        ns.char.bosses = ns.char.bosses or {}
+        local had = ns.char.bosses[main]
+        first = had == nil or had == 0 -- the first kill Chronicle sees (0: taken as beaten before it kept count)
+        if first then ns.char.bosses[main] = time() end
     end
+    local name, text, last = dungeonEnding(dungeon, boss)
+    if name then
+        ns.char.dungeonsDone = ns.char.dungeonsDone or {}
+        ns.char.dungeonsDone[name] = time()
+    end
+    local lore = first and b.t and "boss:" .. main or nil -- who it was: only the first time
+    if not (name or lore) or ns.settings.dungeonStory == false or not ns.Reminder then return end
+    local page = function() ns.Journal.ShowDungeon(dungeon) end
+    C_Timer.After(4, function()
+        if name then
+            -- the end: who the last one was (the first time, when it can be heard), then what it meant
+            local keys = {}
+            if lore and ns.Voice.Get(lore) then keys[1] = lore end
+            keys[#keys + 1] = "dend:" .. name .. "|" .. last
+            local title = (L["%s: the end"]):format((name:gsub("^([^:]+)", function(d) return ns.zoneLocal(d) end)))
+            ns.Reminder.ShowStory(title, text, keys, page, nil, "dungeonStory")
+        else
+            ns.Reminder.ShowStory(boss, b.t, { lore }, page, nil, "dungeonStory")
+        end
+    end)
 end
 
 -- ---------------------------------------------------------------- events
@@ -176,8 +292,8 @@ for _, e in ipairs({ "QUEST_TURNED_IN", "ENCOUNTER_END" }) do pcall(ev.RegisterE
 ev:SetScript("OnEvent", function(_, event, ...)
     if not (ns.char and ns.Lore) then return end
     if event == "ENCOUNTER_END" then
-        local _, boss, difficulty, size, success = ...
-        onEncounterEnd(nil, boss, difficulty, size, success)
+        local id, boss, _, _, success = ...
+        onEncounterEnd(id, boss, success)
     elseif event == "QUEST_TURNED_IN" then
         local id = ...
         -- after the recap has started, so the note does not cover the quest window's own business
@@ -185,9 +301,16 @@ ev:SetScript("OnEvent", function(_, event, ...)
     end
 end)
 
--- Characters who finished a zone before this existed get its epilogue in the journal, without a note.
+-- Characters who finished a zone before this existed get its epilogue in the journal, without a note. Bosses are kept
+-- count of from the first login with them: a wing finished before then has all its bosses, and so has one the game
+-- counts as finished.
 table.insert(ns.onLogin, function()
+    ns.char.bossesSince = ns.char.bossesSince or time()
+    for wing, t in pairs(ns.char.dungeonsDone or {}) do
+        if t < ns.char.bossesSince then takeFinished(wing) end
+    end
     C_Timer.After(10, function()
+        pcall(finishedByStats)
         if not (ns.Lore and ns.Lore.epilogue) then return end
         local seen, started = {}, startedChapters()
         for _, a in ipairs(ns.Lore.arcs or {}) do

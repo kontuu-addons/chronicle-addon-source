@@ -14,6 +14,9 @@ local OPTION = {
     zoneRecap = "\"Previously in...\" reminders", zoneIntro = "Welcome to new zones",
     flightStory = "The story on flights", bestiary = "Bestiary", campfire = "By the fire",
     levelMilestones = "Level milestones", shareNudge = "Remind me to share new quests",
+    -- a dungeon's notes have their own box: under "Previously in...", turning that off hid them too, so nothing was
+    -- said after a dungeon's last boss (the user, 2026-11-07: "it doesnt talk about the boss after i kille them")
+    dungeonStory = "Dungeon stories",
 }
 
 -- "Don't show these" (the user, 2026-11-06: people click away the notes, "Previously in" and the bestiary's): that kind
@@ -21,11 +24,7 @@ local OPTION = {
 function R.TurnOff(kind)
     if not OPTION[kind] then return end
     if ns.Options and ns.Options.Set then ns.Options.Set(kind, false) else ns.settings[kind] = false end
-    if kind == "zoneRecap" then -- the same box has the dungeon notes (entering one, and its end)
-        ns.pr((L["\"Previously in...\" and dungeon notes are off now. To get them back, tick %s in /lore options."]):format(L[OPTION[kind]]))
-    else
-        ns.pr((L["these notes are off now. To get them back, tick \"%s\" in /lore options."]):format(L[OPTION[kind]]))
-    end
+    ns.pr((L["these notes are off now. To get them back, tick \"%s\" in /lore options."]):format(L[OPTION[kind]]))
 end
 
 -- The link in a note's foot (the note is a strip taller while it shows); t.kind says what it turns off.
@@ -196,7 +195,8 @@ function R.ShowDungeon(zone)
         for _, a in ipairs((ns.Lore and ns.Lore.arcs) or {}) do
             if a.zone == zone and ns.Voice.Get("arc:" .. a.id) and #keys < 3 then keys[#keys + 1] = "arc:" .. a.id end
         end
-        return R.ShowStory((L["Entering %s"]):format(ns.zoneLocal(zone)), intro, keys, nil, nil, "zoneRecap")
+        return R.ShowStory((L["Entering %s"]):format(ns.zoneLocal(zone)), intro, keys,
+            function() ns.Journal.ShowDungeon(zone) end, nil, "dungeonStory")
     end
     local keys, first = {}, nil
     for _, a in ipairs((ns.Lore and ns.Lore.arcs) or {}) do
@@ -213,7 +213,7 @@ function R.ShowDungeon(zone)
     t.journal:ClearAllPoints(); t.journal:SetPoint("LEFT", t.listen, "RIGHT", 6, 0)
     t.title:SetText((L["Entering %s"]):format(ns.zoneLocal(zone)))
     t.sub:SetText(first or "")
-    return present(t, "zoneRecap", SHOW_FOR)
+    return present(t, "dungeonStory", SHOW_FOR)
 end
 
 -- First time in a zone: the narrator's short introduction to it (nothing plays unless you click Listen).
@@ -270,7 +270,7 @@ local function onZone()
     if UnitOnTaxi("player") then return end -- flying over a zone isn't visiting it; landing checks again
     local inInstance, kind = IsInInstance()
     if inInstance and (kind == "party" or kind == "raid") then
-        if ns.settings.zoneRecap and not announced[zone] then
+        if ns.settings.dungeonStory ~= false and not announced[zone] then
             announced[zone] = true
             R.ShowDungeon(zone)
         end
