@@ -179,6 +179,7 @@ local CHANNELS = {
     Ambience = { vol = "Sound_AmbienceVolume", on = "Sound_EnableAmbience", name = "Ambience" },
 }
 V.CHANNEL_ORDER = { "Dialog", "SFX", "Master", "Music", "Ambience" }
+V.CHANNELS = CHANNELS
 ---@return string id, table channel
 function V.Channel()
     local c = tostring(ns.settings and ns.settings.channel or "Dialog")
