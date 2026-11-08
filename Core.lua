@@ -225,6 +225,32 @@ function ns.FancyBorder(f)
     return b
 end
 
+-- Forever's look on one of our windows, the same on all of them: the dark rock of the game's windows inside and the
+-- diamond-metal border around. False where the client has no such border: the window keeps its plain look.
+function ns.ForeverLook(f)
+    local border = ns.FancyBorder(f)
+    if not border then return false end
+    local rock = f:CreateTexture(nil, "BACKGROUND", nil, -7)
+    rock:SetTexture("Interface\\FrameGeneral\\UI-Background-Rock", "REPEAT", "REPEAT")
+    rock:SetHorizTile(true); rock:SetVertTile(true); rock:SetAllPoints()
+    if f.SetBackdropColor then f:SetBackdropColor(0, 0, 0, 0); f:SetBackdropBorderColor(0, 0, 0, 0) end
+    f.rock, f.metal = rock, border
+    return true
+end
+
+-- The game's inner frame (the dark inset inside its windows) around a box of ours, like a portrait. False where the
+-- client has none: the box keeps its own edge.
+function ns.ForeverInset(f)
+    if not (NineSliceUtil and C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo("UI-Frame-InnerTopLeft")) then
+        return false
+    end
+    local ok, n = pcall(CreateFrame, "Frame", nil, f, "NineSlicePanelTemplate")
+    if not (ok and n) or not pcall(NineSliceUtil.ApplyLayoutByName, n, "InsetFrameTemplate") then return false end
+    n:SetFrameLevel(f:GetFrameLevel() + 5)
+    n:EnableMouse(false)
+    if f.SetBackdropBorderColor then f:SetBackdropBorderColor(0, 0, 0, 0) end
+    return true
+end
 -- A layer of our own over a Blizzard window, for Chronicle's buttons on it. Buttons made as children of a
 -- Blizzard window get picked up by the game's gamepad mode when it scans that window, which taints its code
 -- and blocks protected calls ("tried to call SetPreferredGamepadInteractTarget"). Hooking the window's OnShow

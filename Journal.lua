@@ -6,6 +6,10 @@ local J = {}
 ns.Journal = J
 
 local W, H, LIST_W = 900, 580, 250
+-- the new style's grid, as in the game's own windows (ButtonFrameTemplate): the strip beside the round portrait holds
+-- the search, the list and the page start under it, the same margins all round
+local TOP, EDGE, GAP = -60, 12, 8
+local ROW_W = LIST_W - 28 -- a list row, inside the list's frame with room for its scrollbar
 local frame, list, listScroll, page, pageScroll, search
 local tab = "story"                -- "story", "people", "attune", "dungeons" or "beasts"
 local listRows, entryRows = {}, {}
@@ -530,6 +534,7 @@ function J.ZoneMenu(owner)
         zoneMenu:SetFrameStrata("DIALOG")
         zoneMenu:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
         zoneMenu:SetBackdropColor(0.07, 0.055, 0.04, 0.97); zoneMenu:SetBackdropBorderColor(0.6, 0.48, 0.25, 1)
+        ns.ForeverLook(zoneMenu)
         zoneMenu:EnableMouse(true)
         zoneMenu.rows = {}
         zoneMenu:SetScript("OnUpdate", function(self, el)
@@ -565,7 +570,7 @@ local function getListRow(i)
     local r = listRows[i]
     if r then return r end
     r = CreateFrame("Button", nil, list)
-    r:SetSize(LIST_W - 22, 38)
+    r:SetSize(ROW_W, 38)
     r.hl = r:CreateTexture(nil, "HIGHLIGHT"); r.hl:SetAllPoints(); r.hl:SetColorTexture(1, 0.85, 0.5, 0.08)
     r.sel = r:CreateTexture(nil, "BACKGROUND"); r.sel:SetAllPoints(); r.sel:SetColorTexture(0.85, 0.68, 0.35, 0.2)
     r.title = text(r, "GameFontNormal"); r.title:SetPoint("TOPLEFT", 8, -5); r.title:SetPoint("RIGHT", -8, 0); r.title:SetWordWrap(false)
@@ -754,6 +759,28 @@ local function toggle(b, play)
     if ns.Voice.Owner() == b then ns.Voice.Stop() else play() end
 end
 
+-- A small icon that plays a quest's lines: the quest giver's speech bubble, the narrator's book (the game's own
+-- pictures). While it talks it goes dark with a gold stop square on it, as the speaker window's portrait does.
+local function iconButton(parent, icon, tip)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(18, 18)
+    b:SetNormalTexture(icon)
+    b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    b.shade = b:CreateTexture(nil, "OVERLAY"); b.shade:SetAllPoints(); b.shade:SetColorTexture(0, 0, 0, 0.35)
+    b.square = b:CreateTexture(nil, "OVERLAY", nil, 1); b.square:SetSize(8, 8); b.square:SetPoint("CENTER")
+    b.square:SetColorTexture(1, 0.82, 0, 0.7) -- see-through, the icon shows under it
+    b.shade:Hide(); b.square:Hide()
+    b:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine(self.square:IsShown() and L["Stop"] or tip, 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    -- callers set Stop or the label as on a button: Stop puts the stop square on
+    function b:SetText(t) local stop = t == L["Stop"]; self.shade:SetShown(stop); self.square:SetShown(stop) end
+    return b
+end
+
 -- right page rows (story entries)
 local function getEntryRow(i)
     local r = entryRows[i]
@@ -768,8 +795,8 @@ local function getEntryRow(i)
     r.who:SetScript("OnLeave", function(self) ink(self.text, INK_SOFT) end)
     r.who:SetScript("OnClick", function(self) click(); if self.name then J.ShowPerson(self.name) end end)
     r.body = text(r, "QuestFont", INK); r.body:SetPoint("TOPLEFT", r.who, "BOTTOMLEFT", 0, -5); r.body:SetSpacing(2)
-    r.play = button(r, L["Quest"], 64)
-    r.recap = button(r, L["Recap"], 64)
+    r.play = iconButton(r, "Interface\\GossipFrame\\GossipGossipIcon", L["Play quest"])
+    r.recap = iconButton(r, "Interface\\Icons\\INV_Misc_Book_09", L["Play recap"])
     entryRows[i] = r
     return r
 end
@@ -789,6 +816,7 @@ local function hideAll()
     -- a dungeon's page moves these onto and under its painting; every other page has them where they were made
     if header.intro then header.intro:ClearAllPoints(); header.intro:SetPoint("TOPLEFT", 0, -50) end
     if header.recap then header.recap:ClearAllPoints(); header.recap:SetPoint("TOPRIGHT", page, "TOPRIGHT", 0, 0) end
+    if header.title then header.title:SetPoint("RIGHT", page, "RIGHT", -110, 0) end -- room for one button, as before
     for _, v in pairs(person) do if type(v) == "table" and v.Hide then v:Hide() end end
     for _, r in ipairs(person.deal or {}) do r:Hide() end
     for _, v in pairs(beast) do if type(v) == "table" and v.Hide then v:Hide() end end
@@ -895,8 +923,8 @@ end
 -- applies to this character (J.ArcForMe)
 local function showZoneLinks(zone)
     local on = zone and true
-    header.zoneLink.zone, header.overview.zone = zone, zone
-    header.zoneLink:SetShown(on and true or false); header.overview:SetShown(on and true or false)
+    header.zoneLink.zone = zone
+    header.zoneLink:SetShown(on and true or false)
 end
 
 -- the button at the top right of the page: Play recap on a chapter, Listen (or another label) elsewhere
@@ -1029,7 +1057,7 @@ local function renderChapter(ch)
         local q, l = ns.db.quests[e.id] or {}, lore().quests[e.id] or {}
         local r = getEntryRow(i)
         r:ClearAllPoints(); r:SetPoint("TOPLEFT", page, "TOPLEFT", 0, y); r:SetWidth(pw)
-        r.title:SetWidth(pw - 170); r.body:SetWidth(pw - 24)
+        r.title:SetWidth(pw - 70); r.body:SetWidth(pw - 24) -- room for the two icons
         r.icon:SetTexture(e.state == "done" and ICON_DONE or ICON_ACTIVE)
         r.title:SetText(questTitle(e.id) .. (ns.IsNew(e.id) and L["  |cff2e8f86new in Forever|r"] or "")
             .. (e.state == "active" and L["  |cff8a6d45(in progress)|r"] or ""))
@@ -1041,14 +1069,16 @@ local function renderChapter(ch)
 
         local body
         if e.state == "done" and l.summary then body = l.summary else body = excerpt(q.detail, 420) end
-        body = body or (ns.Voice.Get("q" .. e.id .. ":detail") and L["Press Quest to hear the quest giver."] or L["No story written for this quest yet."])
+        body = body or (ns.Voice.Get("q" .. e.id .. ":detail") and L["Click the speech bubble to hear the quest giver."] or L["No story written for this quest yet."])
         r.body:SetText(body)
 
         local qKey, sKey = ns.Voice.PageKey(e.id, "detail"), "sum:" .. e.id
-        r.play:ClearAllPoints(); r.play:SetPoint("TOPRIGHT", r, "TOPRIGHT", -70, 2)
-        r.recap:ClearAllPoints(); r.recap:SetPoint("TOPRIGHT", r, "TOPRIGHT", 0, 2)
         r.play:SetShown(ns.Voice.Get(qKey) ~= nil)
         r.recap:SetShown(e.state == "done" and ns.Voice.Get(sKey) ~= nil)
+        -- Recap at the right, Quest left of it (or at the right when there is no recap)
+        r.recap:ClearAllPoints(); r.recap:SetPoint("TOPRIGHT", r, "TOPRIGHT", 0, 2)
+        r.play:ClearAllPoints()
+        if r.recap:IsShown() then r.play:SetPoint("RIGHT", r.recap, "LEFT", -6, 0) else r.play:SetPoint("TOPRIGHT", r, "TOPRIGHT", 0, 2) end
         r.play:SetScript("OnClick", function(b) toggle(b, function() ns.Voice.Play(qKey, b) end) end)
         r.recap:SetScript("OnClick", function(b) toggle(b, function() ns.Voice.Play(sKey, b) end) end)
 
@@ -3323,6 +3353,7 @@ local function renderList()
                             or "Legacy-Rewards-Tracker-Diamond")
                         r.count:SetText(ch.locked and "?" or tostring(ch.done))
                         r.check:SetShown(finished)
+                        r.bar:SetShown(not finished) -- the check says it already: a bar only on the way
                         r.chapter = ch
                         r.edge:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], ch.locked and 0.15 or 0.5)
                     end
@@ -3424,6 +3455,7 @@ local function renderList()
                 r.diamond:SetAtlas(a.done == 0 and "Legacy-Rewards-Tracker-Diamond-Disable" or "Legacy-Rewards-Tracker-Diamond")
                 r.count:SetText(tostring(a.done))
                 r.check:SetShown(not a.nextId)
+                r.bar:SetShown(a.nextId ~= nil) -- the check says it already: a bar only on the way
                 r.chapter = a
                 r.edge:SetColorTexture(GOLD[1], GOLD[2], GOLD[3], 0.5)
             else
@@ -3498,13 +3530,21 @@ local function remember(key)
     end
 end
 
+-- the buttons at the top right of the page, in one row from the right: Play recap, Play zone story, Back (the ones
+-- shown); the title ends before them
 local function showBack()
     local b = header.back
     if not b then return end
-    b:ClearAllPoints()
-    if header.recap:IsShown() then b:SetPoint("TOPRIGHT", header.recap, "TOPLEFT", -4, 0)
-    else b:SetPoint("TOPRIGHT", page, "TOPRIGHT", 0, 0) end
     b:SetShown(tab == "story" and #history > 0)
+    local right
+    for _, btn in ipairs({ header.recap, header.zone, b }) do
+        if btn:IsShown() then
+            btn:ClearAllPoints()
+            if right then btn:SetPoint("TOPRIGHT", right, "TOPLEFT", -4, 0) else btn:SetPoint("TOPRIGHT", page, "TOPRIGHT", 0, 0) end
+            right = btn
+        end
+    end
+    header.title:SetPoint("RIGHT", right or page, right and "LEFT" or "RIGHT", right and -8 or 0, 0)
 end
 
 function J.Refresh()
@@ -3663,8 +3703,22 @@ local function hasAtlas(name)
     return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) ~= nil
 end
 
--- a square tab on the window's right edge, like the Friends and Progress Track windows
+-- a square tab on the window's right edge: the game's own (LargeSideTabButtonTemplate), set up as its Collections
+-- window does, so the icon fills the tab and is cut to its shape; else one of our own like it
 local function sideTab(parent, icon, tip, onClick)
+    local ok, tab = pcall(CreateFrame, "Button", nil, parent, "LargeSideTabButtonTemplate")
+    if ok and tab and tab.Icon and tab.SetChecked and tab.SetFillToInterior and tab.SetCustomOnMouseUpHandler then
+        tab.tooltipText = tip
+        tab.Icon:SetTexture(icon)
+        tab:SetFillToInterior(true)
+        tab:SetCustomOnMouseUpHandler(function(_, button, upInside)
+            if button == "LeftButton" and upInside then onClick() end
+        end)
+        -- J.SetTab calls SetEnabled(false) on the tab that is open: show it selected instead of greying it out
+        function tab:SetEnabled(on) self:SetChecked(not on) end
+        tab:SetChecked(false)
+        return tab
+    end
     local b = CreateFrame("Button", nil, parent)
     b:SetSize(55, 55)
     b.bg = b:CreateTexture(nil, "BACKGROUND"); b.bg:SetAtlas("common-sidetab"); b.bg:SetSize(55, 60); b.bg:SetPoint("CENTER")
@@ -3751,7 +3805,7 @@ local function create()
         frame.optionsTab = options
         -- where the options page shows inside the journal
         frame.optionsHost = CreateFrame("Frame", nil, frame)
-        frame.optionsHost:SetPoint("TOPLEFT", 70, -40); frame.optionsHost:SetPoint("BOTTOMRIGHT", -14, 12)
+        frame.optionsHost:SetPoint("TOPLEFT", EDGE, TOP); frame.optionsHost:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
         frame.optionsHost:Hide()
         -- closing the journal on its Options tab: next time it opens on the story again
         frame:HookScript("OnHide", function()
@@ -3762,7 +3816,7 @@ local function create()
         share:SetPoint("TOPLEFT", options, "BOTTOMLEFT", 0, -4)
         frame.shareTab = share
         frame.shareHost = CreateFrame("Frame", nil, frame)
-        frame.shareHost:SetPoint("TOPLEFT", 70, -40); frame.shareHost:SetPoint("BOTTOMRIGHT", -14, 12)
+        frame.shareHost:SetPoint("TOPLEFT", EDGE, TOP); frame.shareHost:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
         frame.shareHost:Hide()
     else
         frame.tabStory = button(frame, L["The Story"], 100); frame.tabStory:SetPoint("LEFT", frame.titleText, "RIGHT", 12, 0)
@@ -3783,10 +3837,15 @@ local function create()
         options:SetScript("OnClick", openOptions)
     end
 
-    -- search (below the round portrait in the new style)
-    local topY = styled and -66 or -50
+    -- search: in the new style in the strip beside the round portrait, else above the list
+    local topY = -50
     search = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
-    search:SetSize(LIST_W - 26, 20); search:SetPoint("TOPLEFT", 20, topY); search:SetAutoFocus(false)
+    search:SetAutoFocus(false)
+    if styled then
+        search:SetPoint("TOPLEFT", 72, -32); search:SetPoint("RIGHT", frame, "LEFT", LIST_W + 2, 0); search:SetHeight(20)
+    else
+        search:SetSize(LIST_W - 26, 20); search:SetPoint("TOPLEFT", 20, topY)
+    end
     search.hint = text(search, "GameFontDisableSmall"); search.hint:SetPoint("LEFT", 4, 0); search.hint:SetText(L["Search quests, people, places"])
     search:SetScript("OnTextChanged", function(self)
         filter = (self:GetText() or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
@@ -3798,14 +3857,23 @@ local function create()
 
     -- left list
     listScroll = scrollFrame(frame, 60)
-    listScroll:SetPoint("TOPLEFT", 12, topY - 28); listScroll:SetPoint("BOTTOMLEFT", 12, 12); listScroll:SetWidth(LIST_W - 22)
-    list = CreateFrame("Frame", nil, listScroll); list:SetSize(LIST_W - 22, 10)
+    if styled then -- inside the list's frame (EDGE .. LIST_W + 2), 4 in from it
+        listScroll:SetPoint("TOPLEFT", EDGE + 4, TOP - 4); listScroll:SetPoint("BOTTOMLEFT", EDGE + 4, EDGE + 4)
+    else
+        listScroll:SetPoint("TOPLEFT", 12, topY - 28); listScroll:SetPoint("BOTTOMLEFT", 12, 12)
+    end
+    listScroll:SetWidth(ROW_W)
+    list = CreateFrame("Frame", nil, listScroll); list:SetSize(ROW_W, 10)
     listScroll:SetScrollChild(list)
 
     -- parchment page
     local paper = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     frame.paper = paper
-    paper:SetPoint("TOPLEFT", LIST_W + 10, styled and -32 or -46); paper:SetPoint("BOTTOMRIGHT", -12, 12)
+    if styled then
+        paper:SetPoint("TOPLEFT", LIST_W + 2 + GAP, TOP); paper:SetPoint("BOTTOMRIGHT", -EDGE, EDGE)
+    else
+        paper:SetPoint("TOPLEFT", LIST_W + 10, -46); paper:SetPoint("BOTTOMRIGHT", -12, 12)
+    end
     paper:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     paper:SetBackdropColor(0.9, 0.84, 0.7, 1)
     paper:SetBackdropBorderColor(0.45, 0.33, 0.16, 1)
@@ -3832,6 +3900,17 @@ local function create()
     pageScroll:SetPoint("TOPLEFT", 22, -18); pageScroll:SetPoint("BOTTOMRIGHT", -30, 14) -- the scrollbar on flat paper, off the curled edge
     page = CreateFrame("Frame", nil, pageScroll); page:SetSize(W - LIST_W - 74, 10)
     pageScroll:SetScrollChild(page)
+    -- the game's inner frame around the list and the page, like the panels inside its own windows (Professions); the
+    -- list's frame goes with the list (the Options and Share tabs take its place)
+    if styled then
+        local box = CreateFrame("Frame", nil, frame)
+        box:SetPoint("TOPLEFT", EDGE, TOP); box:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT", LIST_W + 2, EDGE)
+        if ns.ForeverInset(box) then
+            listScroll:HookScript("OnShow", function() box:Show() end)
+            listScroll:HookScript("OnHide", function() box:Hide() end)
+        end
+        ns.ForeverInset(paper)
+    end
 
     frame:SetScale(tonumber(ns.settings.journalScale) or 1)
 
@@ -3885,20 +3964,10 @@ local function create()
         end
         toggle(self, function() ns.Voice.PlayQueue(self.keys or {}, self) end)
     end)
-    header.zone = button(page, L["Play zone story"], 120); header.zone:SetPoint("TOPRIGHT", header.recap, "BOTTOMRIGHT", 0, -4)
+    header.zone = button(page, L["Play zone story"], 120) -- placed in the row by showBack()
     header.zone:SetScript("OnClick", function(self)
         toggle(self, function() ns.Voice.PlayQueue(self.keys or {}, self) end)
     end)
-    -- the same page behind a button beside Play zone story, easier to find than the grey line
-    header.overview = button(page, L["Zone overview"], 120)
-    header.overview:SetPoint("RIGHT", header.zone, "LEFT", -4, 0)
-    header.overview:SetScript("OnClick", function(self) if self.zone then J.Select("area:" .. self.zone) end end)
-    header.overview:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine((L["Everything about %s's story"]):format(ns.zoneLocal(self.zone) or ""), 1, 1, 1)
-        GameTooltip:Show()
-    end)
-    header.overview:SetScript("OnLeave", function() GameTooltip:Hide() end)
     header.tellInfo = text(page, "GameFontNormalSmall", INK_SOFT); header.tellInfo:SetJustifyH("RIGHT")
     header.tellInfo:SetPoint("TOPRIGHT", header.recap, "BOTTOMRIGHT", -2, -4)
     local ticker = CreateFrame("Frame", nil, page)
@@ -3918,6 +3987,7 @@ local function create()
     person.window:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
     person.window:SetBackdropColor(0.05, 0.04, 0.04, 1)
     person.window:SetBackdropBorderColor(0.45, 0.33, 0.16, 1)
+    ns.ForeverInset(person.window)
     person.model = CreateFrame("PlayerModel", nil, person.window)
     person.model:SetPoint("TOPLEFT", 1, -1); person.model:SetPoint("BOTTOMRIGHT", -1, 1)
     person.name = text(page, "QuestTitleFont", INK_TITLE); person.name:SetPoint("TOPLEFT", person.window, "TOPRIGHT", 16, 0)
