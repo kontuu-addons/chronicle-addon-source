@@ -1,4 +1,4 @@
--- Chronicle / Minimap: a book on the minimap edge. Left-click: journal. Right-click: options. Drag: move.
+-- Chronicle / Minimap: a book on the minimap edge. Left-click: journal. Right-click: options. Shift + right-click: Journal only. Drag: move.
 -- Detached (option): the same book anywhere on the screen, dragged freely, for players who keep it by their action bars.
 local _, ns = ...
 local L = ns.L
@@ -6,6 +6,26 @@ local M = {}
 ns.Minimap = M
 
 local btn
+
+-- Left-click: journal. Right-click: options. Shift + right-click: Journal only on or off, without opening anything.
+local function click(mouse)
+    if mouse == "RightButton" and IsShiftKeyDown() then
+        ns.SetJournalOnly(not ns.settings.journalOnly)
+        if ns.Options and ns.Options.Refresh then ns.Options.Refresh() end -- an open options page shows it at once
+    elseif mouse == "RightButton" then
+        ns.Options.Open()
+    else
+        ns.Journal.Toggle()
+    end
+end
+
+local function tooltip(tt)
+    tt:AddLine("Chronicle")
+    tt:AddLine(L["Left-click: the story so far"], 1, 1, 1)
+    tt:AddLine(L["Right-click: options"], 1, 1, 1)
+    tt:AddLine(ns.settings.journalOnly and L["Shift + right-click: voices on"] or L["Shift + right-click: journal only"], 1, 1, 1)
+end
+M.Click, M.Tooltip = click, tooltip -- the addon compartment (Core.lua) uses them too
 
 local function place()
     btn:ClearAllPoints()
@@ -50,9 +70,7 @@ local function create()
     border:SetPoint("TOPLEFT")
     border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 
-    btn:SetScript("OnClick", function(_, mouse)
-        if mouse == "RightButton" then ns.Options.Open() else ns.Journal.Toggle() end
-    end)
+    btn:SetScript("OnClick", function(_, mouse) click(mouse) end)
     btn:SetMovable(true); btn:SetClampedToScreen(true)
     btn:SetScript("OnDragStart", function(self)
         if ns.settings.minimapFree then self:StartMoving(); return end
@@ -75,9 +93,7 @@ local function create()
     end)
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine("Chronicle")
-        GameTooltip:AddLine(L["Left-click: the story so far"], 1, 1, 1)
-        GameTooltip:AddLine(L["Right-click: options"], 1, 1, 1)
+        tooltip(GameTooltip)
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -96,14 +112,8 @@ local function broker()
     local obj = LDB:NewDataObject("Chronicle", {
         type = "launcher",
         icon = "Interface\\Icons\\INV_Misc_Book_09",
-        OnClick = function(_, mouse)
-            if mouse == "RightButton" then ns.Options.Open() else ns.Journal.Toggle() end
-        end,
-        OnTooltipShow = function(tt)
-            tt:AddLine("Chronicle")
-            tt:AddLine(L["Left-click: the story so far"], 1, 1, 1)
-            tt:AddLine(L["Right-click: options"], 1, 1, 1)
-        end,
+        OnClick = function(_, mouse) click(mouse) end,
+        OnTooltipShow = tooltip,
     })
     if not obj then return nil end
     DBI:Register("Chronicle", obj, ns.settings.minimapIcon)

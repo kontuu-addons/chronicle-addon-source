@@ -123,6 +123,8 @@ L[" still to discover|r"] = " noch zu entdecken|r"
 L["Play story"] = "Geschichte abspielen"
 L["Left-click: the story so far"] = "Linksklick: deine bisherige Geschichte"
 L["Right-click: options"] = "Rechtsklick: Optionen"
+L["Shift + right-click: journal only"] = "Umschalt + Rechtsklick: nur Tagebuch"
+L["Shift + right-click: voices on"] = "Umschalt + Rechtsklick: Stimmen an"
 
 -- options
 L["General"] = "Allgemein"
@@ -189,7 +191,7 @@ L["Shows ! where a quest giver has quests for you right now, and ? where to hand
 L["Mark new Forever quests"] = "Neue Forever-Quests markieren"
 L["Shows \"New in WoW: Forever\" on the quest window for quests that were not in original Classic, and whether they have a voice yet."] = "Zeigt „Neu in WoW: Forever“ im Questfenster für Quests, die es im ursprünglichen Classic nicht gab, und ob sie schon vertont sind."
 L["Minimap button"] = "Minikarten-Schaltfläche"
-L["Left-click opens the journal, right-click the options. Drag to move it around the minimap."] = "Linksklick öffnet das Tagebuch, Rechtsklick die Optionen. Ziehen, um sie um die Minikarte zu bewegen."
+L["Left-click opens the journal, right-click the options, Shift + right-click turns Journal only on or off. Drag to move it around the minimap."] = "Linksklick öffnet das Tagebuch, Rechtsklick die Optionen, Umschalt + Rechtsklick schaltet Nur Tagebuch ein oder aus. Ziehen, um sie um die Minikarte zu bewegen."
 L["Sharing"] = "Teilen"
 L["Share recordings with my party"] = "Aufnahmen mit meiner Gruppe teilen"
 L["When you group with other Chronicle players, the text of new quests, greetings, books and NPC speech that has no voice yet is swapped automatically, so it can be voiced in the next release. It includes your character's name (it appears in quest text). Never chat or mail."] = "In einer Gruppe mit anderen Chronicle-Spielern wird der Text neuer, noch nicht vertonter Quests, Begrüßungen, Bücher und NSC-Sprache automatisch ausgetauscht, damit er in der nächsten Version vertont werden kann. Er enthält den Namen deines Charakters (er kommt im Questtext vor). Niemals Chat oder Post."

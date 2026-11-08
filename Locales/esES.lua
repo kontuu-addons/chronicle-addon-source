@@ -124,6 +124,8 @@ L[" still to discover|r"] = " por descubrir|r"
 L["Play story"] = "Escuchar historia"
 L["Left-click: the story so far"] = "Clic izquierdo: tu historia hasta ahora"
 L["Right-click: options"] = "Clic derecho: opciones"
+L["Shift + right-click: journal only"] = "Mayús + clic derecho: solo diario"
+L["Shift + right-click: voices on"] = "Mayús + clic derecho: voces activadas"
 
 -- options
 L["General"] = "General"
@@ -190,7 +192,7 @@ L["Shows ! where a quest giver has quests for you right now, and ? where to hand
 L["Mark new Forever quests"] = "Marcar las misiones nuevas de Forever"
 L["Shows \"New in WoW: Forever\" on the quest window for quests that were not in original Classic, and whether they have a voice yet."] = "Muestra «Nueva en WoW: Forever» en la ventana de las misiones que no existían en el Classic original, y si ya tienen voz."
 L["Minimap button"] = "Botón del minimapa"
-L["Left-click opens the journal, right-click the options. Drag to move it around the minimap."] = "Clic izquierdo abre el diario, clic derecho las opciones. Arrástralo para moverlo alrededor del minimapa."
+L["Left-click opens the journal, right-click the options, Shift + right-click turns Journal only on or off. Drag to move it around the minimap."] = "Clic izquierdo abre el diario, clic derecho las opciones, Mayús + clic derecho activa o desactiva Solo diario. Arrástralo para moverlo alrededor del minimapa."
 L["Sharing"] = "Compartir"
 L["Share recordings with my party"] = "Compartir grabaciones con mi grupo"
 L["When you group with other Chronicle players, the text of new quests, greetings, books and NPC speech that has no voice yet is swapped automatically, so it can be voiced in the next release. It includes your character's name (it appears in quest text). Never chat or mail."] = "Al agruparte con otros jugadores de Chronicle, el texto de misiones nuevas, saludos, libros y frases de PNJ que aún no tienen voz se intercambia automáticamente para darles voz en la próxima versión. Incluye el nombre de tu personaje (aparece en el texto de las misiones). Nunca el chat ni el correo."

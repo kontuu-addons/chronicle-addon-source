@@ -57,19 +57,13 @@ end
 _G.ChronicleBinding_Back = function() if ns.Voice then ns.Voice.Prev() end end
 _G.ChronicleBinding_Journal = function() if ns.Journal then ns.Journal.Toggle() end end
 
--- The minimap's addon compartment (the TOC names these): left-click the journal, right-click the options.
+-- The minimap's addon compartment (the TOC names these): the same clicks and tooltip as the minimap button.
 _G.Chronicle_OnAddonCompartmentClick = function(_, button)
-    if button == "RightButton" then
-        if ns.Options then ns.Options.Open() end
-    elseif ns.Journal then
-        ns.Journal.Toggle()
-    end
+    if ns.Minimap and ns.Minimap.Click then ns.Minimap.Click(button) end
 end
 _G.Chronicle_OnAddonCompartmentEnter = function(_, frame)
     GameTooltip:SetOwner(frame, "ANCHOR_LEFT")
-    GameTooltip:AddLine("Chronicle")
-    GameTooltip:AddLine(L["Left-click: the story so far"], 1, 1, 1)
-    GameTooltip:AddLine(L["Right-click: options"], 1, 1, 1)
+    if ns.Minimap and ns.Minimap.Tooltip then ns.Minimap.Tooltip(GameTooltip) end
     GameTooltip:Show()
 end
 _G.Chronicle_OnAddonCompartmentLeave = function() GameTooltip:Hide() end

@@ -123,6 +123,8 @@ L[" still to discover|r"] = " encore à découvrir|r"
 L["Play story"] = "Écouter l'histoire"
 L["Left-click: the story so far"] = "Clic gauche : votre histoire jusqu'ici"
 L["Right-click: options"] = "Clic droit : options"
+L["Shift + right-click: journal only"] = "Maj + clic droit : journal seul"
+L["Shift + right-click: voices on"] = "Maj + clic droit : voix activées"
 
 -- options
 L["General"] = "Général"
@@ -189,7 +191,7 @@ L["Shows ! where a quest giver has quests for you right now, and ? where to hand
 L["Mark new Forever quests"] = "Signaler les nouvelles quêtes Forever"
 L["Shows \"New in WoW: Forever\" on the quest window for quests that were not in original Classic, and whether they have a voice yet."] = "Affiche « Nouveau dans WoW: Forever » dans la fenêtre des quêtes absentes de Classic d'origine, et indique si elles sont déjà doublées."
 L["Minimap button"] = "Bouton de la minicarte"
-L["Left-click opens the journal, right-click the options. Drag to move it around the minimap."] = "Clic gauche ouvre le journal, clic droit les options. Faites-le glisser pour le déplacer autour de la minicarte."
+L["Left-click opens the journal, right-click the options, Shift + right-click turns Journal only on or off. Drag to move it around the minimap."] = "Clic gauche ouvre le journal, clic droit les options, Maj + clic droit active ou désactive Journal seul. Faites-le glisser pour le déplacer autour de la minicarte."
 L["Sharing"] = "Partage"
 L["Share recordings with my party"] = "Partager les enregistrements avec mon groupe"
 L["When you group with other Chronicle players, the text of new quests, greetings, books and NPC speech that has no voice yet is swapped automatically, so it can be voiced in the next release. It includes your character's name (it appears in quest text). Never chat or mail."] = "En groupe avec d'autres joueurs de Chronicle, le texte des nouvelles quêtes, salutations, livres et paroles de PNJ pas encore doublés est échangé automatiquement pour être doublé dans la prochaine version. Il contient le nom de votre personnage (il apparaît dans le texte des quêtes). Jamais la discussion ni le courrier."
