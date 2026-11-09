@@ -87,6 +87,12 @@ function V.Subtitle(key)
     end
     local rare = tonumber(key:match("^rare:(%d+)$") or "")
     if rare then return l.rares and l.rares[rare] and l.rares[rare].text end
+    -- a bestiary entry (beast:<group>:<n>) in its teller's words: it played without them (thanks Heybarbaruiva)
+    local gid, entry = key:match("^beast:(.+):(%d+)$")
+    if gid then
+        local g = l.bestiary and l.bestiary.groups and l.bestiary.groups[gid]
+        return g and g.text and g.text[tonumber(entry)]
+    end
     if key:match("^hum:") then return nil end -- your own character humming: nothing to read
     local epi = key:match("^epi:(.+)")
     if epi then return l.epilogue and l.epilogue[epi] end
@@ -133,8 +139,10 @@ local function showBar(entry, key)
     -- a window still up with a line that ended goes when one plays that it doesn't show: its buttons would work on
     -- that one while it shows the old one
     local function notShown() if ns.TalkingHead then pcall(ns.TalkingHead.Hide, true) end end
-    -- NPCs talking in the world already have the game's speech bubble; a window popping up for every chatter line is noise
-    if key and key:sub(1, 4) == "say:" then return notShown() end
+    -- NPCs talking in the world already have the game's speech bubble; a window popping up for every chatter line is
+    -- noise (alche). The lines players shared ("sayr:") too (Donkeyman); played from the journal (a button owns it),
+    -- chatter shows its words like any other line
+    if key and (key:sub(1, 4) == "say:" or key:sub(1, 5) == "sayr:") and not owner then return notShown() end
     -- Immersion's talk box already shows the NPC and the text of quest pages and greetings
     local npcLine = key and (key:match("^q%d") or key:sub(1, 4) == "gos:" or key:sub(1, 3) == "qg:")
     if npcLine and ns.ExternalDialogShown and ns.ExternalDialogShown() then return notShown() end
@@ -165,8 +173,9 @@ V.ReleaseBackground = releaseBackground
 table.insert(ns.onLogin, releaseBackground)
 
 -- Ducking (option, on by default): while Chronicle talks, music and ambience go down to a third of where you set
--- them, and fade back up when it is quiet again. Your own levels are kept in the saved data until then, so a crash
--- mid-line puts them back at the next login. A level you changed yourself in the meantime is left as you set it.
+-- them, and fade back up when it is quiet again. Your own levels are kept in the saved data until then, so a /reload
+-- or logout mid-line or mid-fade puts them back at the next login. A level you changed yourself in the meantime is
+-- left as you set it.
 local DUCK = { "Sound_MusicVolume", "Sound_AmbienceVolume" }
 
 -- The sound channel the voices play on (option, Dialog by default; thanks AstroCat): its name for PlaySoundFile,
@@ -206,8 +215,17 @@ local function holdDuck()
     if duckFade then duckFade:Cancel(); duckFade = nil end
     local saved = ns.db.duckSaved
     if not saved then
+        -- your level, unless it is still where Chronicle left it lowered after the last line (another addon put it back
+        -- there, say): then your level is the one from before. Taken as yours, each line took it down another two
+        -- thirds: 40% became 5% (thanks Heybarbaruiva)
+        local last = ns.db.duckLast or {}
+        local own, put = last.own or {}, last.put or {}
         saved = {}
-        for _, cv in ipairs(DUCK) do saved[cv] = tonumber(GetCVar(cv)) end
+        for _, cv in ipairs(DUCK) do
+            local cur = tonumber(GetCVar(cv))
+            if cur and put[cv] and own[cv] and math.abs(cur - put[cv]) < 0.006 then cur = own[cv] end
+            saved[cv] = cur
+        end
         ns.db.duckSaved = saved
     end
     local _, ch = V.Channel()
@@ -228,18 +246,24 @@ local function releaseDuck(now)
     if duckFade and not now then return end
     if duckFade then duckFade:Cancel(); duckFade = nil end
     local set = ns.db.duckSet or {}
-    local mine = {} -- the levels still where Chronicle put them (not changed by hand while it talked)
+    ns.db.duckSet = set
+    local from = {} -- the levels still where Chronicle put them (not changed by hand while it talked): where they are
     for _, cv in ipairs(DUCK) do
         local cur, put = tonumber(GetCVar(cv)), set[cv] or (saved[cv] and saved[cv] * DUCK_TO)
-        if saved[cv] and cur and put and math.abs(cur - put) <= math.max(0.02, put * 0.15) then mine[#mine + 1] = cv end
+        if saved[cv] and cur and put and math.abs(cur - put) <= math.max(0.02, put * 0.15) then from[cv] = cur end
     end
     local step, steps = 0, now and 1 or 8
     local function tick()
         step = step + 1
-        local f = DUCK_TO + (1 - DUCK_TO) * step / steps
-        for _, cv in ipairs(mine) do pcall(SetCVar, cv, saved[cv] * f) end
+        for cv, a in pairs(from) do
+            pcall(SetCVar, cv, a + (saved[cv] - a) * step / steps)
+            -- each step kept too: a /reload or logout mid-fade found the music part way up, took it for a change by
+            -- hand and left it there
+            set[cv] = tonumber(GetCVar(cv))
+        end
         if step >= steps then
             if duckFade then duckFade:Cancel(); duckFade = nil end
+            ns.db.duckLast = { own = saved, put = set } -- for the next line (see holdDuck)
             ns.db.duckSaved, ns.db.duckSet = nil, nil
         end
     end

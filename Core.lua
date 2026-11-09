@@ -57,19 +57,13 @@ end
 _G.ChronicleBinding_Back = function() if ns.Voice then ns.Voice.Prev() end end
 _G.ChronicleBinding_Journal = function() if ns.Journal then ns.Journal.Toggle() end end
 
--- The minimap's addon compartment (the TOC names these): left-click the journal, right-click the options.
+-- The minimap's addon compartment (the TOC names these): the same clicks and tooltip as the minimap button.
 _G.Chronicle_OnAddonCompartmentClick = function(_, button)
-    if button == "RightButton" then
-        if ns.Options then ns.Options.Open() end
-    elseif ns.Journal then
-        ns.Journal.Toggle()
-    end
+    if ns.Minimap and ns.Minimap.Click then ns.Minimap.Click(button) end
 end
 _G.Chronicle_OnAddonCompartmentEnter = function(_, frame)
     GameTooltip:SetOwner(frame, "ANCHOR_LEFT")
-    GameTooltip:AddLine("Chronicle")
-    GameTooltip:AddLine(L["Left-click: the story so far"], 1, 1, 1)
-    GameTooltip:AddLine(L["Right-click: options"], 1, 1, 1)
+    if ns.Minimap and ns.Minimap.Tooltip then ns.Minimap.Tooltip(GameTooltip) end
     GameTooltip:Show()
 end
 _G.Chronicle_OnAddonCompartmentLeave = function() GameTooltip:Hide() end
@@ -356,7 +350,14 @@ ev:SetScript("OnEvent", function(_, event, arg)
         ns.female = (UnitSex("player") == 3)
         local loc = GetLocale and GetLocale() or "enUS"
         ns.english = (loc == "enUS" or loc == "enGB")
-        for _, fn in ipairs(ns.onLogin) do fn() end
+        -- each step on its own: one that fails (another addon's frames, a client without some API) still goes to the
+        -- game's error handler, and the rest still run. In a row, one error stopped every step after it (the kill
+        -- watcher behind the Bestiary and the rares, the map, the campfire...), and WoW hides Lua errors by default
+        local report = geterrorhandler and geterrorhandler()
+        for _, fn in ipairs(ns.onLogin) do
+            local ok, err = pcall(fn)
+            if not ok and report then report(err) end
+        end
 
         -- other voice addons would talk over Chronicle: say so once, leave the choice to the player
         -- (Spoken Quests, Zones and Books are one addon now, Spoken; SpokenQuests is the old one, where not updated)
@@ -372,15 +373,19 @@ ev:SetScript("OnEvent", function(_, event, arg)
         end
 
         -- "Chronicle: Story Journal" on CurseForge is this addon without the voice packs (its TOC says
-        -- X-Edition: journal): it starts as a journal only, once, and never asks for the packs
+        -- X-Edition: journal): it starts as a journal only, once, and never asks for the packs. Not with voice packs
+        -- installed: both CurseForge projects fill the same folder, so whoever has both gets whichever updated last,
+        -- and an update turned every voice off (thanks Lukey_Q)
         ns.journalEdition = (C_AddOns.GetAddOnMetadata(ADDON, "X-Edition") == "journal")
-        if ns.journalEdition and not ns.db.editionDefaults then
+        local asJournal = ns.journalEdition and #ns.packs == 0
+        if asJournal and not ns.db.editionDefaults then
             ns.db.editionDefaults = true
             ns.settings.journalOnly = true
             ns.ApplyGreetingMute()
-        elseif not ns.journalEdition and ns.db.editionDefaults then
-            -- the full addon after the Story Journal (both keep the same saved settings): the journal edition's
-            -- "Journal only" would keep every voice off and every Play button grey. Voices back on, once (thanks Ziggo)
+        elseif not asJournal and ns.db.editionDefaults then
+            -- the full addon (or voice packs) after the Story Journal (both keep the same saved settings): the journal
+            -- edition's "Journal only" would keep every voice off and every Play button grey. Voices back on, once
+            -- (thanks Ziggo)
             ns.db.editionDefaults = nil
             if ns.settings.journalOnly then
                 ns.settings.journalOnly = false

@@ -767,6 +767,7 @@ local function getEntryRow(i)
     r.who:SetScript("OnEnter", function(self) self.text:SetTextColor(INK_TITLE[1], INK_TITLE[2], INK_TITLE[3]) end)
     r.who:SetScript("OnLeave", function(self) ink(self.text, INK_SOFT) end)
     r.who:SetScript("OnClick", function(self) click(); if self.name then J.ShowPerson(self.name) end end)
+    r.chain = text(r, "GameFontNormalSmall", INK_SOFT); r.chain:SetPoint("LEFT", r.who, "RIGHT", 12, 0) -- its chain
     r.body = text(r, "QuestFont", INK); r.body:SetPoint("TOPLEFT", r.who, "BOTTOMLEFT", 0, -5); r.body:SetSpacing(2)
     r.play = button(r, L["Quest"], 64)
     r.recap = button(r, L["Recap"], 64)
@@ -870,6 +871,9 @@ local function placeTodos(items, y, n, pw, x, ruled)
             if q.from then
                 who = q.from .. (q.x and (" (%s %.0f, %.0f)"):format(ns.zoneLocal(q.zone), q.x, q.y) or "")
             end
+            -- a step of a chain: how far along it (a dungeon's lines say it in their own notes)
+            local chain = q.id and q.leads == nil and J.ChainLine(q.id)
+            if chain then who = (who and (who .. "\n") or "") .. "|cff7a6a55" .. chain .. "|r" end
             if q.extra then who = (who and (who .. "\n") or "") .. q.extra end
             r.title:SetText(line); r.who:SetText(who or "")
         end
@@ -1038,6 +1042,7 @@ local function renderChapter(ch)
         r.who.name = giver
         r.who.text:SetText(giver and (L["Given by %s"]):format(giver) or "")
         r.who:SetWidth(math.max(10, r.who.text:GetStringWidth()))
+        r.chain:SetText(J.ChainLine(e.id, true) or "") -- a step of a chain: "Step 2 of 12"
 
         local body
         if e.state == "done" and l.summary then body = l.summary else body = excerpt(q.detail, 420) end
@@ -1761,6 +1766,54 @@ local function chainTrack(k, n)
     local dots = {}
     for i = 1, n do dots[i] = DOT:format(i < k and "Green" or i == k and "Yellow" or "Gray") end
     return table.concat(dots) .. "  " .. (L["Step %d of %d"]):format(k, n)
+end
+
+-- Where any quest stands in its chain (the user: "we should show where we are in a quest chain everywhere ... people
+-- seem to use this addon for completionism"; two quests called A Rogue's Deal read like one quest twice): the steps
+-- before it as you went them (chainPath), then the ones after it while there is one way on for you. Copies of a step
+-- (one title from several givers: Call of Fire's four trainers) are one way; a real split ends the count, and a
+-- breadcrumb is no step. Steps ahead are only counted, never named. Returns the chain's quests and this one's place.
+function J.ChainStep(id)
+    if not (ns.Map and ns.Map.NextQuests) then return nil end
+    local steps = chainPath(id, {})
+    local k = #steps
+    local seen, crumbs, cur = {}, lore().breadcrumb or {}, id
+    for _, s in ipairs(steps) do seen[s] = true end
+    for _ = 1, 40 do
+        local byTitle, ways, pick = {}, 0, nil
+        for _, nx in ipairs(ns.Map.NextQuests(cur)) do
+            if not seen[nx] and not crumbs[nx] and ns.Map.ForMe(nx) then
+                local info = ns.Map.QuestInfo(nx) or {}
+                local t = info.t or tostring(nx)
+                if not byTitle[t] then byTitle[t] = true; ways = ways + 1 end
+                -- of copies, the one you did or have
+                if not pick or flaggedDone(nx) or ns.char.active[nx] then pick = nx end
+            end
+        end
+        if ways ~= 1 then break end
+        seen[pick] = true
+        steps[#steps + 1] = pick
+        cur = pick
+    end
+    if #steps < 2 then return nil end
+    return steps, k
+end
+
+-- the lights of a quest's chain and its step: green done, yellow the one you're on or take next, grey still ahead.
+-- Only the step where the chain's other steps are on the page already (a chapter lists them, ticked when done: the
+-- lights said the same on every row, the user: "what does the lights really tell us?")
+function J.ChainLine(id, stepOnly)
+    local steps, k = J.ChainStep(id)
+    if not steps then return nil end
+    if stepOnly then return (L["Step %d of %d"]):format(k, #steps) end
+    local dots, toTake = {}, true -- the first step not done is the one to take next
+    for i, s in ipairs(steps) do
+        local state = "Gray"
+        if flaggedDone(s) then state = "Green"
+        elseif ns.char.active[s] or toTake then state = "Yellow"; toTake = false end
+        dots[i] = DOT:format(state)
+    end
+    return table.concat(dots) .. "  " .. (L["Step %d of %d"]):format(k, #steps)
 end
 
 -- a quest's line on the page: its giver and where they stand (click: a marker there); inside a dungeon, its way in;
@@ -3683,12 +3736,19 @@ local function sideTab(parent, icon, tip, onClick)
     return b
 end
 
+-- the journal's size: the player's (its grip), else W x H; never smaller than its side tabs need, nor past a screen
+local function journalSize(w, h)
+    w = math.floor(math.max(720, math.min(1700, tonumber(w) or W)) + 0.5)
+    h = math.floor(math.max(480, math.min(1200, tonumber(h) or H)) + 0.5)
+    return w, h
+end
+
 local function create()
     local styled = hasAtlas("common-sidetab") and hasAtlas("UI-Frame-PortraitMetal-CornerTopLeft")
         and pcall(function() frame = CreateFrame("Frame", "ChronicleJournalFrame", UIParent, "PortraitFrameTemplate") end)
         and frame and frame.NineSlice ~= nil
     if styled then
-        frame:SetSize(W, H)
+        frame:SetSize(journalSize(ns.settings.journalW, ns.settings.journalH))
         frame:SetPoint("CENTER")
         frame:SetFrameStrata("HIGH")
         -- the dark rock background and the streaks along the top, like the game's own windows
@@ -3704,7 +3764,7 @@ local function create()
     else
         if frame then frame:Hide() end
         frame = CreateFrame("Frame", "ChronicleJournalFrame", UIParent, "BackdropTemplate")
-        frame:SetSize(W, H)
+        frame:SetSize(journalSize(ns.settings.journalW, ns.settings.journalH))
         frame:SetPoint("CENTER")
         frame:SetFrameStrata("HIGH")
         frame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 2 })
@@ -3830,33 +3890,41 @@ local function create()
 
     pageScroll = scrollFrame(paper, 50)
     pageScroll:SetPoint("TOPLEFT", 22, -18); pageScroll:SetPoint("BOTTOMRIGHT", -30, 14) -- the scrollbar on flat paper, off the curled edge
-    page = CreateFrame("Frame", nil, pageScroll); page:SetSize(W - LIST_W - 74, 10)
+    page = CreateFrame("Frame", nil, pageScroll); page:SetSize(frame:GetWidth() - LIST_W - 74, 10)
     pageScroll:SetScrollChild(page)
+    frame.page = page
 
-    frame:SetScale(tonumber(ns.settings.journalScale) or 1)
+    frame:SetScale(tonumber(ns.settings.journalScale) or 1) -- the options' Journal size slider: the whole window bigger
 
-    -- a resize grip in the bottom right corner: drag it and the journal grows or shrinks as you go (its top left
-    -- corner stays where it is). The same size as the options' Journal size slider.
+    -- a resize grip in the bottom right corner: drag it and the window gets wider or narrower, taller or shorter, each
+    -- on its own (the user: "should work with just dragging it either x or y"), its top left corner staying where it
+    -- is; the list keeps its width, the page takes the rest and its words wrap to fit. Kept for the next time.
     local grip = CreateFrame("Button", nil, frame)
     grip:SetSize(16, 16); grip:SetPoint("BOTTOMRIGHT", -4, 4); grip:SetFrameLevel(frame:GetFrameLevel() + 20)
     grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
     grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
     grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
-    grip:SetScript("OnMouseDown", function(self)
-        local sc = frame:GetScale()
-        self.left, self.top = frame:GetLeft() * sc, frame:GetTop() * sc -- in the screen's (UIParent's) units
+    frame.grip = grip
+    grip:SetScript("OnMouseDown", function(self, mouse)
+        if mouse and mouse ~= "LeftButton" then return end
+        self.left, self.top, self.drawn = frame:GetLeft(), frame:GetTop(), 0 -- in the window's own units
         self:SetScript("OnUpdate", function(g)
-            local cx = GetCursorPosition() / UIParent:GetEffectiveScale()
-            local v = math.max(0.8, math.min(1.3, (cx - g.left) / W))
-            frame:SetScale(v)
+            local s = frame:GetEffectiveScale()
+            local cx, cy = GetCursorPosition()
+            local w, h = journalSize(cx / s - g.left, g.top - cy / s)
+            if w == frame:GetWidth() and h == frame:GetHeight() then return end
+            frame:SetSize(w, h)
             frame:ClearAllPoints()
-            frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", g.left / v, g.top / v)
-            ns.settings.journalScale = v
+            frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", g.left, g.top)
+            page:SetWidth(w - LIST_W - 74)
+            ns.settings.journalW, ns.settings.journalH = w, h
+            if GetTime() - g.drawn > 0.15 then g.drawn = GetTime(); J.Refresh() end -- the words, a few times a second
         end)
     end)
     grip:SetScript("OnMouseUp", function(self)
+        if not self:GetScript("OnUpdate") then return end
         self:SetScript("OnUpdate", nil)
-        if ns.Options and ns.Options.Refresh then pcall(ns.Options.Refresh) end -- the slider shows the new size
+        J.Refresh()
     end)
 
     -- story header

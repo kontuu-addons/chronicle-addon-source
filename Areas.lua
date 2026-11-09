@@ -3,9 +3,17 @@
 -- someone talks gets its turn the next time. Places without a line yet are kept for /lore share.
 local _, ns = ...
 
--- WoW: Forever renamed a few places since their line was written under the old name: the game's name -> ours (thanks
--- AstroCat: Crusader's Outpost in Tirisfal never told its line, so the land's Places could never be complete)
-local RENAMED = { ["Tirisfal Glades:Crusader's Outpost"] = "Crusader Outpost" }
+-- The game's name for where you are -> the place whose line tells it. WoW: Forever renamed a few places since their
+-- line was written under the old name (thanks AstroCat: Crusader's Outpost in Tirisfal never told its line, so the
+-- land's Places could never be complete). And inside Northshire Abbey the game names only the room you're in, never the
+-- abbey: its line never played (Elwynn's Places stayed at 20 of 22; thanks to a player on CurseForge, and the shares:
+-- 18 players' lists of places without a line had the abbey's rooms).
+local PLACE_OF = {
+    ["Tirisfal Glades:Crusader's Outpost"] = "Crusader Outpost",
+    ["Elwynn Forest:Main Hall"] = "Northshire Abbey",
+    ["Elwynn Forest:Hall of Arms"] = "Northshire Abbey",
+    ["Elwynn Forest:Library Wing"] = "Northshire Abbey",
+}
 
 -- The land you're in as the map has it, walked up to the zone.
 local function mapZone()
@@ -45,7 +53,7 @@ local function onArea()
     if InCombatLockdown() or IsInInstance() or UnitOnTaxi("player") then return end
     local zone, place = here()
     if not (zone and zone ~= "" and place and place ~= "" and place ~= zone) then return end
-    place = RENAMED[zone .. ":" .. place] or place
+    place = PLACE_OF[zone .. ":" .. place] or place
     local key = "area:" .. zone .. ":" .. place
     if not ns.Voice.Get(key) and place:find("'s ", 1, true) then -- renamed with a possessive, as that one was
         local plain = "area:" .. zone .. ":" .. (place:gsub("'s ", " "))
