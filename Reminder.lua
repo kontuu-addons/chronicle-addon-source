@@ -5,7 +5,9 @@ local L = ns.L
 local R = {}
 ns.Reminder = R
 
-local AWAY = 30 * 60   -- seconds away before a zone counts as "returning"
+-- seconds away before a zone counts as "returning": a day (it was half an hour, and the note came after every trip to
+-- town or a dungeon; the user: "Noone forgets that quick")
+local AWAY = 24 * 60 * 60
 local SHOW_FOR = 25    -- seconds the toast stays up (longer while the mouse is over it)
 local toast
 
@@ -39,6 +41,14 @@ function R.AddOffLink(t)
     b:SetScript("OnClick", function() t:Hide(); R.TurnOff(t.kind) end)
     t.off = b
     return b
+end
+
+-- A note's Listen and History wait their turn after whoever is talking and the lines already waiting; they used to cut
+-- the line off and throw the waiting ones away (domino1919 on CurseForge: "it deletes the queue and plays"). With
+-- nothing talking, or the voices paused, they play at once.
+local function listen(keys)
+    if not ns.Voice.IsPlaying() then return ns.Voice.PlayQueue(keys) end
+    for _, k in ipairs(keys) do ns.Voice.Enqueue(k) end
 end
 
 local function questZone(id, e)
@@ -107,7 +117,7 @@ local function getToast()
     t.listen = CreateFrame("Button", nil, t, "UIPanelButtonTemplate")
     t.listen:SetSize(80, 20); ns.FitButton(t.listen); t.listen:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", 8, -4)
     t.listen:SetText(L["Listen"])
-    t.listen:SetScript("OnClick", function() ns.Voice.PlayQueue(t.keys or {}); t:Hide() end)
+    t.listen:SetScript("OnClick", function() listen(t.keys or {}); t:Hide() end)
     t.journal = CreateFrame("Button", nil, t, "UIPanelButtonTemplate")
     t.journal:SetSize(80, 20); ns.FitButton(t.journal); t.journal:SetPoint("LEFT", t.listen, "RIGHT", 6, 0)
     t.journal:SetText(L["Journal"])
@@ -119,7 +129,7 @@ local function getToast()
     t.history = CreateFrame("Button", nil, t, "UIPanelButtonTemplate")
     t.history:SetSize(80, 20); ns.FitButton(t.history); t.history:SetPoint("LEFT", t.journal, "RIGHT", 6, 0)
     t.history:SetText(L["History"])
-    t.history:SetScript("OnClick", function() ns.Voice.PlayQueue({ t.historyKey }); t:Hide() end)
+    t.history:SetScript("OnClick", function() listen({ t.historyKey }); t:Hide() end)
     t.history:Hide()
     local close = CreateFrame("Button", nil, t, "UIPanelCloseButton")
     close:SetSize(24, 24); close:SetPoint("TOPRIGHT", 0, 0)
@@ -157,16 +167,90 @@ local function present(t, kind, secs)
     return true
 end
 
+-- The story chapters begun in a zone: the ones still under way, in the order you began them (as the journal has
+-- them), and how many are finished.
+local function chaptersHere(zone)
+    local going, finished = {}, 0
+    local all = ns.Journal and ns.Journal.BuildChapters and ns.Journal.BuildChapters() or {}
+    for _, ch in ipairs(all) do
+        if ch.arc and ch.zone == zone and #ch.entries > 0 then
+            if ch.done >= (ch.total or #ch.entries) then finished = finished + 1 else going[#going + 1] = ch end
+        end
+    end
+    return going, finished
+end
+
+-- Where you are in each chapter under way: its introduction, then the recap of the last step you finished in it.
+-- Back after days away, the last three quests' recaps said little about the zone's story (Heybarbaruiva: "more of
+-- an overview of my progress in the zone's main story so far"). At most three chapters: the ones you did something
+-- in last, told in the order you began them.
+local MAX_TOLD = 3
+local function storySoFar(going)
+    local at, when = {}, {}
+    for i, e in ipairs(ns.char.journal) do at[e.id], when[e.id] = i, e.t or 0 end
+    local told = going
+    if #going > MAX_TOLD then
+        local busy = {}
+        for i, ch in ipairs(going) do
+            local last = 0 -- a step finished, or a quest of it taken
+            for _, e in ipairs(ch.entries) do
+                local t = (e.state == "done" and when[e.id]) or (ns.char.active and ns.char.active[e.id]) or 0
+                if t > last then last = t end
+            end
+            busy[i] = { ch = ch, i = i, t = last }
+        end
+        table.sort(busy, function(a, b) if a.t ~= b.t then return a.t > b.t end return a.i > b.i end)
+        local keep = {}
+        for i = 1, MAX_TOLD do keep[busy[i].ch] = true end
+        told = {}
+        for _, ch in ipairs(going) do if keep[ch] then told[#told + 1] = ch end end
+    end
+    local keys = {}
+    for _, ch in ipairs(told) do
+        if ch.introKey and ns.Voice.Get(ch.introKey) then keys[#keys + 1] = ch.introKey end
+        local last
+        for _, e in ipairs(ch.entries) do
+            if e.state == "done" and (at[e.id] or 0) >= (last and at[last] or 0) then last = e.id end
+        end
+        if last and ns.Voice.Get("sum:" .. last) then keys[#keys + 1] = "sum:" .. last end
+    end
+    return keys
+end
+
 function R.Show(zone)
-    local keys, titles = recentRecaps(zone, 3)
-    if #keys == 0 then return false end
+    local going, finished = chaptersHere(zone)
+    local keys, titles = {}, {}
+    if #going > 0 then keys = storySoFar(going) end
+    if #keys == 0 then keys, titles = recentRecaps(zone, 3) end
+    if #going == 0 and #keys == 0 then return false end
     local t = getToast()
-    t.keys, t.full = keys, nil
-    t.listen:Show()
-    t.journal:ClearAllPoints(); t.journal:SetPoint("LEFT", t.listen, "RIGHT", 6, 0)
+    t.keys = keys
+    -- Journal: the zone's page, every chapter there with how far you are and what's left
+    t.open = function() ns.Journal.Open("area:" .. zone) end
+    local voiced = #keys > 0 and not ns.settings.journalOnly
+    t.listen:SetShown(voiced)
+    t.journal:ClearAllPoints()
+    if voiced then t.journal:SetPoint("LEFT", t.listen, "RIGHT", 6, 0)
+    else t.journal:SetPoint("TOPLEFT", t.sub, "BOTTOMLEFT", -2, -6) end
     t.title:SetText((L["Previously in %s"]):format(ns.zoneLocal(zone)))
-    local last = titles[#titles]
-    t.sub:SetText(last and (L["Last: %s"]):format(last) or (L["%d recaps"]):format(#keys))
+    if #going > 0 then
+        -- "Chapters: 2 in progress  ·  3 finished"; hover: each one under way and how far you are in it
+        local bits = { #going .. L[" in progress"] }
+        if finished > 0 then bits[2] = finished .. L[" finished"] end
+        t.sub:SetText(L["Chapters"] .. ": " .. table.concat(bits, "  ·  "))
+        local lines = {}
+        for _, ch in ipairs(going) do
+            lines[#lines + 1] = ("%s  |cffaaaaaa%d/%d|r"):format(ch.title, ch.done, ch.total or #ch.entries)
+        end
+        if finished > 0 then
+            lines[#lines + 1] = "|cffaaaaaa" .. finished .. " " .. (finished == 1 and L["chapter finished"] or L["chapters finished"]) .. "|r"
+        end
+        t.full = table.concat(lines, "\n")
+    else
+        t.full = nil
+        local last = titles[#titles]
+        t.sub:SetText(last and (L["Last: %s"]):format(last) or (L["%d recaps"]):format(#keys))
+    end
     return present(t, "zoneRecap", SHOW_FOR)
 end
 

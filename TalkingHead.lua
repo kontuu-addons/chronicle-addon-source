@@ -11,7 +11,8 @@ local f, current, startedAt, currentKey
 local lingerToken = 0 -- a newer show or hide cancels a pending "hide after the line ended"
 local pages, page -- subtitle pages of the current line: { text, at = share of the line where the page starts }
 
-local SUB_LINES = 4 -- the words always have room for this many lines; longer text goes in pages of that size
+local SUB_LINES = 4 -- the words have room for this many lines (more or fewer once the player sizes the window with
+-- its grip); longer text goes in pages of that size
 local PAD = 10 -- the window's margin
 local FOOT = 22 -- the player row's height
 
@@ -92,6 +93,16 @@ local function about(key)
     return ""
 end
 
+-- A saved place is kept in the screen's (UIParent's) units, the window's own offsets go by its size: put back where it
+-- was whatever size it has now. False when there is none.
+local function savedPlace(pos)
+    if not (type(pos) == "table" and type(pos[1]) == "string" and type(pos[2]) == "string"
+        and type(pos[3]) == "number" and type(pos[4]) == "number") then return false end
+    local s = f:GetScale()
+    f:SetPoint(pos[1], UIParent, pos[2], pos[3] / s, pos[4] / s)
+    return true
+end
+
 local function create()
     f = CreateFrame("Frame", "ChronicleTalkingHead", UIParent, "BackdropTemplate") -- named so the game remembers where it was dragged
     ns.PadClose("ChronicleTalkingHead") -- with a controller, its back button (Escape) closes it; the voice goes on
@@ -101,16 +112,18 @@ local function create()
     f:SetBackdropColor(0.07, 0.055, 0.04, 0.92)
     f:SetBackdropBorderColor(0.6, 0.48, 0.25, 1)
     f:SetClampedToScreen(true)
+    ns.settings.speakerScale = nil -- a test build sized the whole window, words and all; the grip below sizes the box
     f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
-    -- held by its top right corner: it changes size only between the full and the compact window, to the left and
-    -- downwards, so the X stays in one place (thanks timmeh)
+    -- held by its top right corner: the full and the slim window differ only in height, downwards, so the X stays in
+    -- one place (thanks timmeh). Kept in the screen's units, placed in its own.
     local function pin()
         local right, top = f:GetRight(), f:GetTop()
         if not (right and top) then return end
         local s = f:GetEffectiveScale() / UIParent:GetEffectiveScale()
+        local x, y = right * s, top * s -- in the screen's units
         f:ClearAllPoints()
-        f:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", right * s, top * s)
-        ns.settings[f.cine and "speakerPosCine" or "speakerPos"] = { "TOPRIGHT", "BOTTOMLEFT", right * s, top * s }
+        f:SetPoint("TOPRIGHT", UIParent, "BOTTOMLEFT", right, top)
+        ns.settings[f.cine and "speakerPosCine" or "speakerPos"] = { "TOPRIGHT", "BOTTOMLEFT", x, y }
     end
     -- locked (option) it stays put, so a stray drag can't move it (thanks Hedge)
     f:SetScript("OnDragStart", function(self)
@@ -120,9 +133,7 @@ local function create()
         self:StopMovingOrSizing()
         if not self.dockedTo then pin() end
     end)
-    local pos = ns.settings.speakerPos
-    if type(pos) == "table" and type(pos[1]) == "string" and type(pos[2]) == "string"
-        and type(pos[3]) == "number" and type(pos[4]) == "number" then f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4]) else f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 170) end
+    if not savedPlace(ns.settings.speakerPos) then f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 170) end
     pin() -- older saved places (and the default) were held by another corner
 
     -- portrait window: dark inset with a thin gold rim
@@ -332,6 +343,45 @@ local function create()
         GameTooltip:Show()
     end)
     stop:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    -- a grip in the bottom right corner: drag it and the window gets wider or narrower, taller or shorter, its top left
+    -- corner staying where it is; the words keep their size and wrap to the new width, and a taller window holds more
+    -- lines before it turns the page (thanks Donkeyman). It shows while the mouse is on the window; a locked window, one
+    -- another addon holds and the slim one without subtitles have none (OnUpdate).
+    local grip = CreateFrame("Button", nil, f)
+    grip:SetSize(12, 12); grip:SetPoint("BOTTOMRIGHT", -1, 1); grip:SetFrameLevel(f:GetFrameLevel() + 20)
+    grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    grip:SetAlpha(0)
+    f.grip = grip
+    grip:SetScript("OnMouseDown", function(self, button)
+        if button ~= "LeftButton" or f.dockedTo or ns.settings.lockSpeaker or f.compact then return end
+        -- in the window's own units; the height that isn't words, and one line's height, from the window as it is
+        self.left, self.top = f:GetLeft(), f:GetTop()
+        self.other, self.lineH = f:GetHeight() - f.subHeight, f.subHeight / f.lines
+        self:SetScript("OnUpdate", function(g)
+            local s = f:GetEffectiveScale()
+            local cx, cy = GetCursorPosition()
+            cx, cy = cx / s, cy / s
+            local minW, maxW = f.cine and 400 or 300, f.cine and 1400 or 1000
+            local w = math.floor(math.max(minW, math.min(maxW, cx - g.left)) + 0.5)
+            local n = math.max(2, math.min(10, math.floor((g.top - cy - g.other) / g.lineH + 0.5)))
+            if w == g.w and n == g.n then return end
+            g.w, g.n = w, n
+            ns.settings[f.cine and "speakerWidthCine" or "speakerWidth"] = w
+            ns.settings.speakerLines = n
+            f:ClearAllPoints()
+            f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", g.left, g.top)
+            T.Relayout()
+        end)
+    end)
+    grip:SetScript("OnMouseUp", function(self)
+        if not self:GetScript("OnUpdate") then return end
+        self:SetScript("OnUpdate", nil)
+        pin() -- held by its top right corner again, where it is now
+    end)
+
     -- right-click anywhere on the window: the next line, or close after the last one; shift-right-click stops
     -- everything (thanks timmeh)
     local function skip()
@@ -485,21 +535,29 @@ local function create()
         -- stays reserved, so nothing moves)
         local over = not self.minimal and (not self.cine or self:IsMouseOver())
         if over ~= self.player:IsShown() then self.player:SetShown(over) end
+        -- the size grip: not on a locked window, one another addon holds or the slim one without subtitles; seen only
+        -- with the mouse on the window
+        local sizable = not (ns.settings.lockSpeaker or self.dockedTo or self.compact)
+        if sizable ~= self.grip:IsShown() then self.grip:SetShown(sizable) end
+        if sizable then self.grip:SetAlpha((self:IsMouseOver() or self.grip:GetScript("OnUpdate")) and 1 or 0) end
     end)
     f:Hide()
 end
 
 -- Fixed bands, so nothing moves from one line to the next: the head (name and title, the X), the portrait and the
--- words (always room for SUB_LINES lines), the progress line and the player row at the foot. Without subtitles there
+-- words (room for the window's lines), the progress line and the player row at the foot. Without subtitles there
 -- is little to show: a slim window with only the head, what the line is about and the foot, no portrait (thanks
 -- alche). Cinematic: the same bands centred on the soft band, without the box and the portrait.
 local function arrange(compact)
     local cine = f.cine
+    -- room for the lines and the width the player gave it with the grip, else SUB_LINES lines in 440 (cinematic 640)
+    f.lines = math.max(2, math.min(10, tonumber(ns.settings.speakerLines) or SUB_LINES))
     local shown = f.sub:GetText() -- the page on screen stays (an option changed while it talks)
-    f.sub:SetText(("Ag\n"):rep(SUB_LINES - 1) .. "Ag")
+    f.sub:SetText(("Ag\n"):rep(f.lines - 1) .. "Ag")
     f.subHeight = f.sub:GetStringHeight()
     f.sub:SetText(shown or ""); f.sub:SetShown(not compact)
-    f:SetWidth(cine and 640 or compact and 330 or 440)
+    -- the slim window (no words) as wide as the full one, so the window's edges line up whatever is talking (Azona)
+    f:SetWidth(cine and (tonumber(ns.settings.speakerWidthCine) or 640) or (tonumber(ns.settings.speakerWidth) or 440))
     local inset = cine and 50 or PAD
     for _, r in ipairs({ f.name, f.about, f.sub, f.progress, f.player }) do r:ClearAllPoints() end
     f.window:SetShown(not (cine or compact or f.faded))
@@ -570,11 +628,36 @@ local function applyStyle(compact)
     end
     arrange(compact)
     if changed and not f.dockedTo then -- each look has its own place; cinematic starts low in the middle
-        local pos = ns.settings[cine and "speakerPosCine" or "speakerPos"]
         f:ClearAllPoints()
-        if type(pos) == "table" and type(pos[3]) == "number" then f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4])
+        if savedPlace(ns.settings[cine and "speakerPosCine" or "speakerPos"]) then -- placed
         elseif cine then f:SetPoint("TOP", UIParent, "BOTTOM", 0, 300)
         else f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 170) end
+    end
+end
+
+-- The words in pages of the window's lines, measured in the window itself (arrange() sized it for them). Stage
+-- directions like <Kaltunk looks you over.> aren't spoken: shown grey.
+local function layoutPages(text)
+    local function fits(s)
+        f.sub:SetText((s:gsub("%s+$", "")))
+        return f.sub:GetStringHeight() <= f.subHeight + 1
+    end
+    local out = paginate((text:gsub("[\r\n]+", " ")), fits)
+    for _, p in ipairs(out) do p.text = p.text:gsub("<([^<>]+)>", "|cff9d9d9d<%1>|r") end
+    return out
+end
+
+-- The grip changed the window's size: its bands again, and the words in pages that fit it, going on from the page that
+-- was on screen.
+function T.Relayout()
+    if not f then return end
+    arrange(f.compact)
+    if pages and f.subtitle then
+        local cur = pages[page] or pages[1]
+        local at = cur and cur.at or 0
+        pages, page = layoutPages(f.subtitle), 1
+        for i, p in ipairs(pages) do if p.at <= at + 1e-6 then page = i end end
+        f.showPage()
     end
 end
 
@@ -691,19 +774,12 @@ function T.Show(entry, key)
     -- subtitles: long text is shown a page at a time, in step with the voice
     local text = subtitle
     if not compact then
-        -- pages of SUB_LINES lines, measured in the window itself (arrange() sized it for them)
-        local function fits(s)
-            f.sub:SetText((s:gsub("%s+$", "")))
-            return f.sub:GetStringHeight() <= f.subHeight + 1
-        end
-        pages = paginate(text:gsub("[\r\n]+", " "), fits)
-        page = 1
-        -- stage directions like <Kaltunk looks you over.> aren't spoken; show them grey
-        for _, p in ipairs(pages) do p.text = p.text:gsub("<([^<>]+)>", "|cff9d9d9d<%1>|r") end
+        f.subtitle = text
+        pages, page = layoutPages(text), 1
         f.showPage()
         f.sub:Show()
     else
-        pages = nil
+        pages, f.subtitle = nil, nil
         f.sub:SetText("")
         f.sub:Hide()
     end
@@ -721,11 +797,8 @@ end
 -- saved place is never touched.
 local dockHooked = {}
 local function backToSaved()
-    local pos = ns.settings.speakerPos
     f:ClearAllPoints()
-    if type(pos) == "table" and type(pos[1]) == "string" and type(pos[2]) == "string"
-        and type(pos[3]) == "number" and type(pos[4]) == "number" then f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4])
-    else f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 170) end
+    if not savedPlace(ns.settings.speakerPos) then f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 170) end
 end
 
 function T.Dock(target, point, relPoint, x, y)

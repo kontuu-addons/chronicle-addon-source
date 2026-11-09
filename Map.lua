@@ -79,6 +79,9 @@ function ChronicleQuestPinMixin:OnMouseEnter()
     for _, q in ipairs(spot.quests) do
         local c = (q.lvl and q.lvl > 0 and GetQuestDifficultyColor) and GetQuestDifficultyColor(q.lvl) or { r = 1, g = 0.82, b = 0 }
         GameTooltip:AddLine((q.lvl and q.lvl > 0) and ("[%d] %s"):format(q.lvl, q.t) or q.t, c.r, c.g, c.b)
+        -- a step of a chain: how far along it this one is (the lights, then "Step 2 of 3")
+        local chain = q.id and ns.Journal and ns.Journal.ChainLine and ns.Journal.ChainLine(q.id)
+        if chain then GameTooltip:AddLine("   " .. chain, 0.6, 0.6, 0.6) end
     end
     GameTooltip:AddLine(spot.turnin and L["Ready to hand in"] or L["Available to you"], 0.6, 0.6, 0.6)
     GameTooltip:Show()
@@ -165,6 +168,25 @@ function M.QuestInfo(id)
         prev = first, prevs = prevs, x = tonumber(x), y = tonumber(y), t = t, zone = questZone[id] }
     questDecoded[id] = q
     return q
+end
+
+-- the quests that come after one (theirs name it as a quest before them), from the same data, gathered once
+local nextIndex
+function M.NextQuests(id)
+    if not nextIndex then
+        nextIndex = {}
+        M.QuestInfo(0) -- gathers every quest's line
+        for qid, line in pairs(questIndex) do
+            local _, prevs = prevsOf((select(6, strsplit("\t", line))))
+            for _, p in ipairs(prevs or {}) do
+                p = math.abs(p)
+                local list = nextIndex[p] or {}
+                list[#list + 1] = qid
+                nextIndex[p] = list
+            end
+        end
+    end
+    return nextIndex[id] or {}
 end
 
 -- the map id of a zone by its English name (searched once over the world's zone maps)

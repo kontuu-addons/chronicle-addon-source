@@ -1,8 +1,9 @@
 -- Chronicle / Campfire: sit down by a camp fire (WoW: Forever's camping) and a small note offers one of the zone's
 -- campfire tales, the next one you haven't heard each time, and once you've heard them all a legend of Azeroth; the
 -- narrator tells it when you click Listen, and nothing plays by itself. Near a fire whose zone has a tale you haven't
--- heard, a short note says so and the minimap book glows. The countdown and the camp's benefits are the game's own
--- buffs. /sing by the fire: your character hums.
+-- heard, the minimap book glows (the big "A campfire nearby" note above the zone name is gone: Donkeyman asked for a
+-- way to turn it off, and the user, 2026-11-09: "we dont need that i think as people know the function of it"). The
+-- countdown and the camp's benefits are the game's own buffs. /sing by the fire: your character hums.
 local _, ns = ...
 local L = ns.L
 local C = {}
@@ -11,7 +12,6 @@ ns.Campfire = C
 local SITTING = { 1289723, 1229739 } -- "Welcoming Campfire", while you sit and wait for the camp's benefits
 local NEARBY = { 1283391 }            -- "Campfire Nearby", while you're close to a camp fire
 local DELAY = 3 -- seconds seated before the tale starts, so a quick sit-down doesn't start a story
-local HINT_AGAIN = 300 -- shortcut: one fire can't be told from another, so the note waits 5 min before showing again
 
 local function has(ids, name)
     local get = C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID
@@ -55,7 +55,7 @@ local function nextLegend()
     end
 end
 
-local seated, pending, near, hint, hintAgain, offered
+local seated, pending, offered
 
 -- the minimap book's golden ring and camp fire (Minimap.lua), while a fire with a tale still to hear is near
 local function ring(on) if ns.Minimap and ns.Minimap.SetCampfire then ns.Minimap.SetCampfire(on) end end
@@ -85,30 +85,6 @@ local function tell()
     ring(false)
 end
 
--- the note, in the game's zone name style: above the zone name, fading in and out on its own
-local function showHint(zone)
-    if not hint then
-        hint = CreateFrame("Frame", nil, UIParent)
-        hint:SetSize(512, 80); hint:SetFrameStrata("LOW")
-        -- right above the game's zone name, so the two never cover each other
-        if _G.ZoneTextFrame then hint:SetPoint("BOTTOM", _G.ZoneTextFrame, "TOP", 0, -30) else hint:SetPoint("TOP", 0, -20) end
-        hint.title = hint:CreateFontString(nil, "ARTWORK", "SubZoneTextFont")
-        hint.title:SetPoint("TOP"); hint.title:SetTextColor(1, 0.82, 0)
-        hint.sub = hint:CreateFontString(nil, "ARTWORK", "GameFontHighlightLarge")
-        hint.sub:SetPoint("TOP", hint.title, "BOTTOM", 0, -6)
-        hint.fade = hint:CreateAnimationGroup()
-        hint.fade:SetToFinalAlpha(true)
-        local fadeIn = hint.fade:CreateAnimation("Alpha")
-        fadeIn:SetFromAlpha(0); fadeIn:SetToAlpha(1); fadeIn:SetDuration(0.6); fadeIn:SetOrder(1)
-        local fadeOut = hint.fade:CreateAnimation("Alpha")
-        fadeOut:SetFromAlpha(1); fadeOut:SetToAlpha(0); fadeOut:SetStartDelay(4); fadeOut:SetDuration(1.5); fadeOut:SetOrder(2)
-        hint.fade:SetScript("OnFinished", function() hint:Hide() end)
-    end
-    hint.title:SetText(L["A campfire nearby"])
-    hint.sub:SetText((L["Sit down for a while, and hear a tale of %s."]):format(ns.zoneLocal(zone)))
-    hint.fade:Stop(); hint:SetAlpha(0); hint:Show(); hint.fade:Play()
-end
-
 local ev = CreateFrame("Frame")
 ev:SetScript("OnEvent", function()
     if not (ns.char and ns.settings) or InCombatLockdown() then return end
@@ -119,18 +95,12 @@ ev:SetScript("OnEvent", function()
         C_Timer.After(DELAY, tell)
     end
     seated = now
-    if seated and hint and hint:IsShown() then hint:Hide() end -- sat down: the note did its job
-    -- on a flight or as a ghost you can't sit down: no note and no glow, and a fire counts as new once you can
+    -- on a flight or as a ghost you can't sit down: no glow, and a fire counts as new once you can
     local close = nearby() and not UnitOnTaxi("player") and not UnitIsDeadOrGhost("player")
     if not (close or now) then offered = nil end -- left the fire: the next one offers its tale again
     -- a tale still to hear here, once per event (its own statement: inside "and" a call gives only its first value)
     local zone
     if close and not ns.settings.journalOnly then zone = select(2, unheardTale()) end
-    if zone and not near and not seated and GetTime() > (hintAgain or 0) then
-        hintAgain = GetTime() + HINT_AGAIN
-        showHint(zone)
-    end
-    near = close
     ring(zone ~= nil)
 end)
 table.insert(ns.onLogin, function()
