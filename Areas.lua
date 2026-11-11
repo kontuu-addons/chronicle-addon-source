@@ -1,6 +1,7 @@
 -- Chronicle / Areas: the first time a character walks into a named place inside a zone (Bloodhoof Village, Red Rocks),
 -- the narrator says a line or two about it (thanks Lukey_Q). Only when nobody else is talking; a place passed while
--- someone talks gets its turn the next time. Places without a line yet are kept for /lore share.
+-- someone talks (or in a fight) is found all the same, and its line gets its turn the next time you're there. Places
+-- without a line yet are kept for /lore share.
 local _, ns = ...
 
 -- The game's name for where you are -> the place whose line tells it. WoW: Forever renamed a few places since their
@@ -50,7 +51,7 @@ end
 local function onArea()
     if not (ns.char and ns.settings) or ns.settings.journalOnly then return end
     -- on a flight the places only pass below: they wait until you go there yourself (thanks tranced93)
-    if InCombatLockdown() or IsInInstance() or UnitOnTaxi("player") then return end
+    if IsInInstance() or UnitOnTaxi("player") then return end
     local zone, place = here()
     if not (zone and zone ~= "" and place and place ~= "" and place ~= zone) then return end
     place = PLACE_OF[zone .. ":" .. place] or place
@@ -59,8 +60,11 @@ local function onArea()
         local plain = "area:" .. zone .. ":" .. (place:gsub("'s ", " "))
         if ns.Voice.Get(plain) then key = plain end
     end
-    ns.char.areaSeen = ns.char.areaSeen or {}
-    if ns.char.areaSeen[key] then return end
+    local seen = ns.char.areaSeen or {}
+    ns.char.areaSeen = seen
+    local untold = ns.char.areaUntold or {} -- found while someone talked or in a fight: the line still to tell
+    ns.char.areaUntold = untold
+    if seen[key] and not untold[key] then return end
     if not ns.Voice.Get(key) then
         if ns.english then -- no line yet: the place's name and zone go out with /lore share
             ns.db.areas = ns.db.areas or {}
@@ -69,11 +73,15 @@ local function onArea()
         end
         return
     end
-    -- with the place intros off (another addon tells the places, AstroCat), the place still goes into the journal's
-    -- Places, quietly, to hear from there
-    if not ns.settings.areaIntros then ns.char.areaSeen[key] = time() return end
-    if ns.Voice.IsPlaying() or ns.Voice.Paused() then return end
-    ns.char.areaSeen[key] = time()
+    -- found the moment you walk in, whatever else goes on: the journal's Places counts it. A place walked into while a
+    -- quest talked, in a fight or with a line paused wasn't counted at all, so most of a land's places could go
+    -- missing (Drazzan: Silverpine's Places said 1 of 23 after seven chapters there)
+    seen[key] = seen[key] or time()
+    -- with the place intros off (another addon tells the places, AstroCat), the place goes into Places quietly, to
+    -- hear from there
+    if not ns.settings.areaIntros then untold[key] = nil return end
+    if InCombatLockdown() or ns.Voice.IsPlaying() or ns.Voice.Paused() then untold[key] = true return end
+    untold[key] = nil
     ns.Voice.Play(key)
 end
 

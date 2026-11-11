@@ -102,6 +102,7 @@ local DEFAULTS = {
     reactions = false,   -- your own character says a short line after some turn-ins (off by default)
     mapPins = true,      -- story chapters on the world map (the books)
     storyPanel = true,   -- the zone's story panel on the world map, and the chapter count on continents
+    placeGlow = true,    -- the places of a zone not found yet glow on the world map (not with hideUnfound)
     showLeft = false,    -- quests still to do and where undiscovered chapters start (journal, map)
     logStory = true,     -- "The story so far" beside the quest log
     campfire = true,     -- "By the fire": a note near a camp fire, and the zone's tale when you sit down
@@ -172,21 +173,31 @@ end
 -- their lines, with each zone's audio in its own sub-folder:
 --   LibStub("Chronicle-1.0"):RegisterPack("ForeverChronicle_Kalimdor", { ["q354:detail"] = { "Durotar\\q354_detail.ogg", 21.4, "Coleman Farthing" }, ... })
 -- Keys ending in ":f" are the variant for female characters (lines that say brother/sister etc.).
+-- HD packs (ForeverChronicle_KalimdorHD ...): the same lines at full quality, installed beside the normal packs. An
+-- HD pack's file is played wherever it has one, whichever pack loaded first; a line it hasn't stays the normal
+-- pack's (the user, 2026-11-10: "i want them to be able to download the full quality").
 ns.audio, ns.packs = {}, {}
 local function registerPack(folder, lines)
     if type(folder) ~= "string" or type(lines) ~= "table" then return end
     local n = 0
+    local hd = folder:sub(-2) == "HD"
     -- each line stays the pack's own small table { file, seconds, who, words }; e.f, e.d, e.w, e.x and e.p read
     -- it through one shared lookup per pack (a copy per line cost about 9 MB for 31,000 lines)
     local FIELDS = { f = 1, d = 2, w = 3, x = 4, s = 5 } -- s: who speaks when, in a line with more than one voice
-    local view = { __index = function(t, k) if k == "p" then return folder end local i = FIELDS[k] return i and rawget(t, i) end }
+    local view = { __index = function(t, k)
+        if k == "p" then return folder elseif k == "hd" then return hd end
+        local i = FIELDS[k] return i and rawget(t, i)
+    end }
     for key, e in pairs(lines) do
         if type(e) == "table" and type(e[1]) == "string" then
-            ns.audio[key] = setmetatable(e, view)
-            n = n + 1
+            local had = ns.audio[key]
+            if hd or not (had and had.hd) then
+                ns.audio[key] = setmetatable(e, view)
+                n = n + 1
+            end
         end
     end
-    ns.packs[#ns.packs + 1] = { folder = folder, lines = n }
+    ns.packs[#ns.packs + 1] = { folder = folder, lines = n, hd = hd }
 end
 
 -- The voice packs register through LibStub: LibStub("Chronicle-1.0"):RegisterPack(folder, lines)

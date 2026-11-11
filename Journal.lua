@@ -7,13 +7,20 @@ ns.Journal = J
 
 local W, H, LIST_W = 900, 580, 250
 local frame, list, listScroll, page, pageScroll, search
-local tab = "story"                -- "story", "people", "attune", "dungeons" or "beasts"
+local tab = "story"                -- "story", "people", "attune", "dungeons", "beasts" or "places"
 local listRows, entryRows = {}, {}
 local chapters, selected = {}, nil
 local attuneList, dungeonList = {}, {}
 -- tabs with their own list on the left (and their own selection)
-local OWN_LIST = { attune = true, dungeons = true, beasts = true }
+local OWN_LIST = { attune = true, dungeons = true, beasts = true, places = true }
 local BEAST_ICON = "Interface\\Icons\\Ability_Tracking" -- the Bestiary tab: a hunter's tracks
+local PLACE_ICON = "Interface\\Icons\\INV_Misc_Map_01"  -- the Places tab, and each place
+-- The Bestiary counts stories, and a creature has several: say so, or "10 of 10 found" beside a land's 5 creatures
+-- reads as two counts of one thing (Drazzan, in Silverpine)
+local function storiesFound(found, total)
+    if ns.settings.hideUnfound then return found == 1 and L["1 story found"] or (L["%d stories found"]):format(found) end
+    return (L["%d of %d stories found"]):format(found, total)
+end
 
 -- the game's soft click when picking something from a list (chapters, characters, zones)
 local function click() if SOUNDKIT then PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end end
@@ -787,6 +794,7 @@ local function hideAll()
     end
     for _, r in ipairs(entryRows) do r:Hide() end
     for _, v in pairs(header) do if v.Hide then v:Hide() end end
+    if header.recap then header.recap.showMap = nil end -- a land's Places page makes it "Show on map"
     -- a dungeon's page moves these onto and under its painting; every other page has them where they were made
     if header.intro then header.intro:ClearAllPoints(); header.intro:SetPoint("TOPLEFT", 0, -50) end
     if header.recap then header.recap:ClearAllPoints(); header.recap:SetPoint("TOPRIGHT", page, "TOPRIGHT", 0, 0) end
@@ -1422,8 +1430,7 @@ local function renderZone(zone)
     if ns.Bestiary then beasts, beastTotal = ns.Bestiary.ZoneEntries(zone) end
     if beastTotal > 0 and (#beasts > 0 or not ns.settings.hideUnfound) then
         y, n = placeTodos({ { title = L["Bestiary"], icon = BEAST_ICON, fn = function() J.ShowBestiary(zone) end,
-            from = ns.settings.hideUnfound and (L["%d found"]):format(#beasts)
-                or (L["%d of %d found"]):format(#beasts, beastTotal) } }, y, n, pw)
+            from = storiesFound(#beasts, beastTotal) } }, y, n, pw)
         y = y - 10
     end
     if tale then y, n = placeTodos(tale, y, n, pw) end
@@ -2682,15 +2689,35 @@ local function placeBook()
     return { lands = lands, found = found, total = total }
 end
 
-local function renderPlaces()
+-- how many found: "3 of 23 found", or only "3 found" with Hide what I haven't found
+local function placesFound(found, total)
+    return ns.settings.hideUnfound and (L["%d found"]):format(found) or (L["%d of %d found"]):format(found, total)
+end
+
+-- The Places tab's page: every land, or one land's (only) from the list beside it
+local function renderPlaces(only)
     local pw = page:GetWidth()
     local width = pw - 10
     hideAll()
     header.title:Show(); header.sub:Show(); header.intro:Show()
-    header.title:SetText(L["Places"])
+    header.title:SetText(only and ns.zoneLocal(only) or L["Places"])
     local pb = placeBook()
     local hide = ns.settings.hideUnfound
-    header.sub:SetText(hide and (L["%d found"]):format(pb.found) or (L["%d of %d found"]):format(pb.found, pb.total))
+    local found, total = pb.found, pb.total
+    for _, l in ipairs(only and pb.lands or {}) do
+        if l.zone == only then found, total = #l.seen, l.total end
+    end
+    header.sub:SetText(placesFound(found, total))
+    -- a land's page: Show on map, where its places not found yet glow (with Show what's left)
+    if only and ns.Map and ns.Map.ShowZone then
+        local b = header.recap
+        b.tell, b.libraryToggle, b.keys = nil, nil, nil
+        b.showMap, b.label, b.anyAudio = only, L["Show on map"], true
+        b:SetText(L["Show on map"])
+        local fs = b:GetFontString()
+        b:SetWidth(math.max(100, (fs and fs:GetStringWidth() or 0) + 28))
+        b:SetEnabled(true); b:Show()
+    end
     header.intro:SetWidth(width)
     header.intro:SetText(pb.found > 0
         and L["Every named place you have walked into, land by land, as the narrator told it the first time. Click one to hear it again."]
@@ -2701,19 +2728,27 @@ local function renderPlaces()
     -- at 20/22 Places for Elwynn ... and cannot for the life of me figure out where the remaining 2 places are")
     local left = ns.settings.showLeft and not hide
     for _, l in ipairs(pb.lands) do
-        if #l.seen > 0 or (left and ns.char.zoneSeen and ns.char.zoneSeen[l.zone]) then
-            y, n = placeTodos({ hide and ("%s  (%d)"):format(ns.zoneLocal(l.zone), #l.seen)
-                or ("%s  (%d/%d)"):format(ns.zoneLocal(l.zone), #l.seen, l.total) }, y, n, pw)
+        if (not only or l.zone == only) and (#l.seen > 0 or l.zone == only
+                or (left and ns.char.zoneSeen and ns.char.zoneSeen[l.zone])) then
+            if not only then -- one land's page has its name as the title already
+                y, n = placeTodos({ hide and ("%s  (%d)"):format(ns.zoneLocal(l.zone), #l.seen)
+                    or ("%s  (%d/%d)"):format(ns.zoneLocal(l.zone), #l.seen, l.total) }, y, n, pw)
+            end
             local items = {}
             for _, p in ipairs(l.seen) do
                 items[#items + 1] = { title = p.name, from = ns.Voice.Subtitle(p.key) or L["Click to hear it"],
-                    keys = { p.key }, icon = "Interface\\Icons\\INV_Misc_Map_01" }
+                    keys = { p.key }, icon = PLACE_ICON }
             end
             local more = l.total - #l.seen
             if more > 0 and not hide then
+                -- click: the world map at that land, where the ones still to find glow (the user: "when they click what
+                -- is missing it opens that map with the highlights")
+                local zone = l.zone
                 items[#items + 1] = { title = "|cff8f8676" .. (more == 1 and L["1 more place to find here"]
                     or (L["%d more places to find here"]):format(more)) .. "|r",
-                    from = left and l.missing and table.concat(l.missing, ", ") or nil }
+                    from = left and l.missing and table.concat(l.missing, ", ") or nil, icon = PLACE_ICON,
+                    tipTitle = ns.zoneLocal(zone), text = L["Click to see them on the world map"],
+                    fn = function() if ns.Map and ns.Map.ShowZone and ns.Map.ShowZone(zone) then frame:Hide() end end }
             end
             y, n = placeTodos(items, y, n, pw)
             y = y - 10
@@ -2820,7 +2855,7 @@ local function renderBeastBook()
     header.title:SetText(L["Bestiary"])
     local book = beastBook()
     local hide = ns.settings.hideUnfound
-    header.sub:SetText(hide and (L["%d found"]):format(book.found) or (L["%d of %d found"]):format(book.found, book.total))
+    header.sub:SetText(storiesFound(book.found, book.total))
     header.intro:SetWidth(width)
     header.intro:SetText(book.found > 0
         and L["What the people of each land have told you about its creatures. Pick one on the left to see it and to hear its stories again. Slay more of them to learn more."]
@@ -2853,7 +2888,7 @@ local function renderBeastBook()
             local names = {}
             for _, g in ipairs(z.groups) do names[#names + 1] = g.name end
             b.sub:SetText(table.concat(names, ", ")); b.sub:SetWidth(cw - 16); b.sub:SetWordWrap(false)
-            b.count:SetText(hide and (L["%d found"]):format(z.found) or (L["%d of %d found"]):format(z.found, z.total))
+            b.count:SetText(storiesFound(z.found, z.total))
             b.bar:SetShown(not hide); b.bar:SetValue(z.total > 0 and z.found / z.total or 0)
             col = col + 1
             if col == 2 then col, y = 0, y - 62 - GAP end
@@ -3279,17 +3314,7 @@ local function renderList()
                 if r.diamond then r.count:SetText(tostring(found)); r.chapter = nil end
             end
         end
-        -- Places: every named place the narrator told this character of, to hear again (spoken only: with the voices)
-        if filter == "" and not ns.settings.journalOnly then
-            local pb = placeBook()
-            if pb.total > 0 then
-                local r = row("chapter")
-                card(r, "places", L["Places"], ns.settings.hideUnfound and (L["%d found"]):format(pb.found)
-                    or (L["%d of %d found"]):format(pb.found, pb.total), pb.found, pb.total, false)
-                r.bar:SetShown(not ns.settings.hideUnfound)
-                if r.diamond then r.count:SetText(tostring(pb.found)); r.chapter = nil end
-            end
-        end
+        -- (Places has its own tab now, beside the Bestiary)
         -- Peoples and Callings: every race and class, yours first (to read, and to hear with the voices)
         if filter == "" then
             local book = peopleBook()
@@ -3422,8 +3447,7 @@ local function renderList()
         -- kills toward the next one) and how many are still to find
         local book, hide = beastBook(), ns.settings.hideUnfound
         local r = row("chapter")
-        card(r, "beasts", L["Bestiary"], hide and (L["%d found"]):format(book.found)
-            or (L["%d of %d found"]):format(book.found, book.total), book.found, book.total, false)
+        card(r, "beasts", L["Bestiary"], storiesFound(book.found, book.total), book.found, book.total, false)
         r.bar:SetShown(not hide)
         if r.diamond then r.chapter = nil end
         for i, z in ipairs(book.zones) do
@@ -3464,6 +3488,27 @@ local function renderList()
                         end
                     end
                 end
+            end
+        end
+    elseif tab == "places" then
+        -- every land's named places: the gem the ones found, the bar how far along; a land's page has them to hear
+        -- again (Drazzan: "Is there meant to be a places 'tab' like there is for bestiary"). The lands you were in last
+        -- first; with Show what's left also the lands you've been to without a place found yet
+        local pb, hide = placeBook(), ns.settings.hideUnfound
+        local r = row("chapter")
+        card(r, "places", L["Places"], placesFound(pb.found, pb.total), pb.found, pb.total, false)
+        r.bar:SetShown(not hide)
+        if r.diamond then r.chapter = nil end
+        for _, l in ipairs(pb.lands) do
+            local names = {}
+            for _, p in ipairs(l.seen) do names[#names + 1] = p.name end
+            local shown = #l.seen > 0 or (not hide and ns.char.zoneSeen and ns.char.zoneSeen[l.zone])
+            if shown and (matches(l.zone, ns.zoneLocal(l.zone)) or matches(unpack(names))) then
+                local c = row("chapter")
+                card(c, "place:" .. l.zone, ns.zoneLocal(l.zone), placesFound(#l.seen, l.total), #l.seen, l.total,
+                    #l.seen == l.total)
+                c.bar:SetShown(not hide)
+                if c.diamond then c.chapter = nil end
             end
         end
     elseif tab == "attune" then
@@ -3593,12 +3638,18 @@ function J.Refresh()
         renderList()
         if g then renderBeast(gid, g) else renderBeastBook() end
         return
+    elseif tab == "places" then
+        -- a land's places, else every land's
+        local zone = selected and selected:match("^place:(.+)$")
+        if not zone then selected = "places" end
+        renderList(); renderPlaces(zone)
+        return
     elseif tab == "story" and selected == "chronicle" then
         renderList(); renderChronicle(); showBack()
     elseif tab == "story" and selected == "library" then
         renderList(); renderLibrary(); showBack()
-    elseif tab == "story" and selected == "places" then
-        renderList(); renderPlaces(); showBack()
+    elseif tab == "story" and selected == "places" then -- the Places page moved to its own tab
+        J.ShowPlaces()
     elseif tab == "story" and selected and (selected == "peoples" or selected:match("^people:")) then
         renderList(); renderPeoples(selected:match("^people:(.+)$")); showBack()
     elseif tab == "story" and selected and selected:match("^area:") then
@@ -3672,7 +3723,7 @@ function J.SetTab(which, keepSelection)
     search:SetShown(not shown); listScroll:SetShown(not shown); frame.paper:SetShown(not shown)
     if shown then
         frame.tabStory:SetEnabled(true); frame.tabPeople:SetEnabled(true); frame.tabAttune:SetEnabled(true)
-        frame.tabDungeons:SetEnabled(true); frame.tabBeasts:SetEnabled(true)
+        frame.tabDungeons:SetEnabled(true); frame.tabBeasts:SetEnabled(true); frame.tabPlaces:SetEnabled(true)
         return
     end
     if which ~= tab and (OWN_LIST[which] or OWN_LIST[tab]) then selected = nil end
@@ -3682,6 +3733,7 @@ function J.SetTab(which, keepSelection)
     frame.tabAttune:SetEnabled(which ~= "attune")
     frame.tabDungeons:SetEnabled(which ~= "dungeons")
     frame.tabBeasts:SetEnabled(which ~= "beasts")
+    frame.tabPlaces:SetEnabled(which ~= "places")
     listScroll:SetVerticalScroll(0); pageScroll:SetVerticalScroll(0)
     if not keepSelection then J.Refresh() end
 end
@@ -3736,10 +3788,11 @@ local function sideTab(parent, icon, tip, onClick)
     return b
 end
 
--- the journal's size: the player's (its grip), else W x H; never smaller than its side tabs need, nor past a screen
+-- the journal's size: the player's (its grip), else W x H; never smaller than its side tabs need (six, then Options
+-- and Share: 540), nor past a screen
 local function journalSize(w, h)
     w = math.floor(math.max(720, math.min(1700, tonumber(w) or W)) + 0.5)
-    h = math.floor(math.max(480, math.min(1200, tonumber(h) or H)) + 0.5)
+    h = math.floor(math.max(540, math.min(1200, tonumber(h) or H)) + 0.5)
     return w, h
 end
 
@@ -3807,6 +3860,8 @@ local function create()
         frame.tabDungeons:SetPoint("TOPLEFT", frame.tabAttune, "BOTTOMLEFT", 0, -4)
         frame.tabBeasts = sideTab(frame, BEAST_ICON, L["Bestiary"], function() J.ShowBestiary() end)
         frame.tabBeasts:SetPoint("TOPLEFT", frame.tabDungeons, "BOTTOMLEFT", 0, -4)
+        frame.tabPlaces = sideTab(frame, PLACE_ICON, L["Places"], function() J.ShowPlaces() end)
+        frame.tabPlaces:SetPoint("TOPLEFT", frame.tabBeasts, "BOTTOMLEFT", 0, -4)
         local options = sideTab(frame, "Interface\\Icons\\Trade_Engineering", L["Options"], function() J.SetTab("options") end)
         frame.optionsTab = options
         -- where the options page shows inside the journal
@@ -3817,7 +3872,7 @@ local function create()
         frame:HookScript("OnHide", function()
             if frame.optionsHost:IsShown() or (frame.shareHost and frame.shareHost:IsShown()) then J.SetTab(tab, true) end
         end)
-        options:SetPoint("TOPLEFT", frame.tabBeasts, "BOTTOMLEFT", 0, -22)
+        options:SetPoint("TOPLEFT", frame.tabPlaces, "BOTTOMLEFT", 0, -22)
         local share = sideTab(frame, "Interface\\Icons\\INV_Letter_15", L["Share recordings"], function() J.SetTab("share") end)
         share:SetPoint("TOPLEFT", options, "BOTTOMLEFT", 0, -4)
         frame.shareTab = share
@@ -3825,16 +3880,19 @@ local function create()
         frame.shareHost:SetPoint("TOPLEFT", 70, -40); frame.shareHost:SetPoint("BOTTOMRIGHT", -14, 12)
         frame.shareHost:Hide()
     else
-        frame.tabStory = button(frame, L["The Story"], 100); frame.tabStory:SetPoint("LEFT", frame.titleText, "RIGHT", 12, 0)
+        -- (a little narrower each since Places joined, to keep clear of Options and Share at the default width)
+        frame.tabStory = button(frame, L["The Story"], 80); frame.tabStory:SetPoint("LEFT", frame.titleText, "RIGHT", 12, 0)
         frame.tabStory:SetScript("OnClick", function() J.SetTab("story") end)
-        frame.tabPeople = button(frame, L["Characters"], 100); frame.tabPeople:SetPoint("LEFT", frame.tabStory, "RIGHT", 4, 0)
+        frame.tabPeople = button(frame, L["Characters"], 80); frame.tabPeople:SetPoint("LEFT", frame.tabStory, "RIGHT", 4, 0)
         frame.tabPeople:SetScript("OnClick", function() J.SetTab("people") end)
-        frame.tabAttune = button(frame, L["Attunements"], 100); frame.tabAttune:SetPoint("LEFT", frame.tabPeople, "RIGHT", 4, 0)
+        frame.tabAttune = button(frame, L["Attunements"], 90); frame.tabAttune:SetPoint("LEFT", frame.tabPeople, "RIGHT", 4, 0)
         frame.tabAttune:SetScript("OnClick", function() J.SetTab("attune") end)
-        frame.tabDungeons = button(frame, L["Dungeons & Raids"], 120); frame.tabDungeons:SetPoint("LEFT", frame.tabAttune, "RIGHT", 4, 0)
+        frame.tabDungeons = button(frame, L["Dungeons & Raids"], 115); frame.tabDungeons:SetPoint("LEFT", frame.tabAttune, "RIGHT", 4, 0)
         frame.tabDungeons:SetScript("OnClick", function() J.SetTab("dungeons") end)
-        frame.tabBeasts = button(frame, L["Bestiary"], 80); frame.tabBeasts:SetPoint("LEFT", frame.tabDungeons, "RIGHT", 4, 0)
+        frame.tabBeasts = button(frame, L["Bestiary"], 70); frame.tabBeasts:SetPoint("LEFT", frame.tabDungeons, "RIGHT", 4, 0)
         frame.tabBeasts:SetScript("OnClick", function() J.ShowBestiary() end)
+        frame.tabPlaces = button(frame, L["Places"], 60); frame.tabPlaces:SetPoint("LEFT", frame.tabBeasts, "RIGHT", 4, 0)
+        frame.tabPlaces:SetScript("OnClick", function() J.ShowPlaces() end)
         local share = button(frame, L["Share recordings"], 130)
         share:SetPoint("TOPRIGHT", -36, -12)
         share:SetScript("OnClick", function() ns.Share.Open() end)
@@ -3949,6 +4007,11 @@ local function create()
             click()
             ns.settings.libraryView = (ns.settings.libraryView or "shelves") == "shelves" and "tiles" or "shelves"
             J.Refresh()
+            return
+        end
+        if self.showMap then -- a land's Places page: the world map at that land, where the places not found glow
+            click()
+            if ns.Map and ns.Map.ShowZone and ns.Map.ShowZone(self.showMap) then frame:Hide() end
             return
         end
         toggle(self, function() ns.Voice.PlayQueue(self.keys or {}, self) end)
@@ -4145,6 +4208,20 @@ function J.ShowBestiary(zone, gid)
     end
     local open = ns.char.collapsed and ns.char.collapsed.beasts
     if zone and open then open[zone] = nil end -- a land you had folded: open again, with it selected
+    J.Refresh()
+    pageScroll:SetVerticalScroll(0)
+end
+
+-- Open the journal on the Places tab: at a land when given (its places), else where it was, or every land.
+function J.ShowPlaces(zone)
+    if not frame then create() end
+    frame:Show()
+    J.SetTab("places", true) -- also away from the Options and Share pages
+    if zone then
+        selected = "place:" .. zone
+    elseif not (selected and (selected == "places" or selected:match("^place:"))) then
+        selected = "places"
+    end
     J.Refresh()
     pageScroll:SetVerticalScroll(0)
 end

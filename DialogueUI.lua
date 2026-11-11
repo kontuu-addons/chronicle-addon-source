@@ -41,7 +41,16 @@ local provider = {
         -- Chronicle's own option ("Stop when the window closes"), not a stop for the speaker button (thanks Pylo)
         local window = rawget(_G, "DUIQuestFrame")
         if window and not window:IsShown() and not ns.settings.stopOnClose then return end
-        if k:match("^q%d") or k:match("^gos:") or k:match("^qg:") then ns.Voice.Skip() end
+        if not (k:match("^q%d") or k:match("^gos:") or k:match("^qg:")) then return end
+        -- a stop that comes with a new page is that page change too, however long the line has been playing: handing
+        -- in a quest whose giver offers the next one at once (Mankrik, then Her Name Was Olgra) cut the hand-in line
+        -- off and read the new quest instead (thanks Donkeyman). Decided a moment later, so the page's own event has
+        -- come by then whichever of the two addons hears it first.
+        local asked = GetTime()
+        C_Timer.After(0.3, function()
+            if math.abs((ns.Voice.PageTime() or -10) - asked) <= 0.5 then return end
+            if ns.Voice.PlayingKey() == k then ns.Voice.Skip() end
+        end)
     end,
     isPlaying = function() return ns.Voice.IsPlaying() end,
     getAutoPlayDelay = function() return 0 end,

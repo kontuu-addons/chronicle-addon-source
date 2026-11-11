@@ -34,6 +34,7 @@ end
 -- one bubble: beside a frame when there is one to point at, else in the middle of the screen
 local function show(title, text, anchor, side)
     bubble = bubble or makeBubble()
+    bubble:SetFrameStrata("DIALOG") -- the map's tip raises it; every other bubble is where it always was
     bubble.title:SetText(title)
     bubble.text:SetText(text)
     bubble:SetHeight(10 + bubble.title:GetStringHeight() + 6 + bubble.text:GetStringHeight() + 42)
@@ -136,6 +137,48 @@ tipWatch:SetScript("OnUpdate", function(self, dt)
     bubble.next:SetText(L["Got it"])
     bubble.next:SetScript("OnClick", function() bubble:Hide() end)
     bubble.skip:Hide()
+end)
+
+-- The first time the world map opens: where Chronicle's map options are, in the map's own filter menu (story pins, the
+-- story panel, quest givers, places to find). Once per account, for players old and new alike: the places to find glow
+-- by themselves since they came (the user: "a 'tutorial' for map filter first time they open world map? to let them
+-- know there are show/hide functions there"). Beside the filter button; on a client where it can't be found, at the
+-- map's top right corner, where it sits. Over the map even when it fills the screen, and gone when the map closes.
+local mapCorner
+local function mapFilterButton()
+    for _, f in ipairs((WorldMapFrame and WorldMapFrame.overlayFrames) or {}) do
+        -- the map's filter button: a button with a menu and an icon, in the map's top right corner
+        if f.IsMenuOpen and f.Icon and f:IsVisible() and (f:GetPoint()) == "TOPRIGHT" then return f end
+    end
+    local box = WorldMapFrame and (WorldMapFrame.ScrollContainer or WorldMapFrame)
+    if not box then return nil end
+    mapCorner = mapCorner or CreateFrame("Frame", nil, box)
+    mapCorner:SetSize(1, 1); mapCorner:ClearAllPoints(); mapCorner:SetPoint("TOPRIGHT", box, "TOPRIGHT", -20, -14)
+    mapCorner:Show()
+    return mapCorner
+end
+
+local mapTipUp = false
+local function mapTip()
+    if not ns.db or ns.db.tourMapTip or steps then return end -- once; never over the tour
+    if not (WorldMapFrame and WorldMapFrame:IsShown()) then return end
+    ns.db.tourMapTip = true
+    show(L["Chronicle on the map"], L["Story pins, the story panel, quest givers and the places you still have to find: show or hide each of them in the map's filter menu, the button at its top right. Also under Options."], mapFilterButton(), "left")
+    bubble:SetFrameStrata("FULLSCREEN_DIALOG")
+    mapTipUp = true
+    bubble.count:SetText("")
+    bubble.next:SetText(L["Got it"])
+    bubble.next:SetScript("OnClick", function() bubble:Hide(); mapTipUp = false end)
+    bubble.skip:Hide()
+end
+
+table.insert(ns.onLogin, function()
+    if not (WorldMapFrame and WorldMapFrame.HookScript) then return end
+    WorldMapFrame:HookScript("OnShow", function() C_Timer.After(0.3, mapTip) end)
+    WorldMapFrame:HookScript("OnHide", function()
+        if mapTipUp and bubble then bubble:Hide() end
+        mapTipUp = false
+    end)
 end)
 
 -- new players: once, a little after logging in (runs before Core's welcome, so "welcomed" is still unset for them).

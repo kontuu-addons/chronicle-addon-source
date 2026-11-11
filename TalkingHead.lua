@@ -10,6 +10,8 @@ local TALK = 60 -- the "talk" emote animation
 local f, current, startedAt, currentKey
 local lingerToken = 0 -- a newer show or hide cancels a pending "hide after the line ended"
 local pages, page -- subtitle pages of the current line: { text, at = share of the line where the page starts }
+local turns, turn -- who speaks when, in a line read by more than one voice: { {from = seconds, name}, ... }; the one now
+local setHead -- (below) the name, the title beside it and the portrait of who is speaking
 
 local SUB_LINES = 4 -- the words have room for this many lines (more or fewer once the player sizes the window with
 -- its grip); longer text goes in pages of that size
@@ -346,8 +348,9 @@ local function create()
 
     -- a grip in the bottom right corner: drag it and the window gets wider or narrower, taller or shorter, its top left
     -- corner staying where it is; the words keep their size and wrap to the new width, and a taller window holds more
-    -- lines before it turns the page (thanks Donkeyman). It shows while the mouse is on the window; a locked window, one
-    -- another addon holds and the slim one without subtitles have none (OnUpdate).
+    -- lines before it turns the page (thanks Donkeyman). It shows while the mouse is on the window; a locked window and
+    -- one another addon holds have none (OnUpdate). The slim one without words (a flight's stories, the tales by the
+    -- campfire, subtitles off) has it too, for its width only: the same width as the window with words (Donkeyman again).
     local grip = CreateFrame("Button", nil, f)
     grip:SetSize(12, 12); grip:SetPoint("BOTTOMRIGHT", -1, 1); grip:SetFrameLevel(f:GetFrameLevel() + 20)
     grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
@@ -356,21 +359,22 @@ local function create()
     grip:SetAlpha(0)
     f.grip = grip
     grip:SetScript("OnMouseDown", function(self, button)
-        if button ~= "LeftButton" or f.dockedTo or ns.settings.lockSpeaker or f.compact then return end
+        if button ~= "LeftButton" or f.dockedTo or ns.settings.lockSpeaker then return end
         -- in the window's own units; the height that isn't words, and one line's height, from the window as it is
         self.left, self.top = f:GetLeft(), f:GetTop()
         self.other, self.lineH = f:GetHeight() - f.subHeight, f.subHeight / f.lines
+        self.slim = f.compact -- no words to make room for: the width only, the lines stay as they are
         self:SetScript("OnUpdate", function(g)
             local s = f:GetEffectiveScale()
             local cx, cy = GetCursorPosition()
             cx, cy = cx / s, cy / s
             local minW, maxW = f.cine and 400 or 300, f.cine and 1400 or 1000
             local w = math.floor(math.max(minW, math.min(maxW, cx - g.left)) + 0.5)
-            local n = math.max(2, math.min(10, math.floor((g.top - cy - g.other) / g.lineH + 0.5)))
+            local n = g.slim and f.lines or math.max(2, math.min(10, math.floor((g.top - cy - g.other) / g.lineH + 0.5)))
             if w == g.w and n == g.n then return end
             g.w, g.n = w, n
             ns.settings[f.cine and "speakerWidthCine" or "speakerWidth"] = w
-            ns.settings.speakerLines = n
+            if not g.slim then ns.settings.speakerLines = n end
             f:ClearAllPoints()
             f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", g.left, g.top)
             T.Relayout()
@@ -529,15 +533,22 @@ local function create()
                 page = page + 1
                 self.showPage()
             end
+            -- a line in more than one voice: the head follows who is speaking, the narrator between Wizbang's words on
+            -- his Buzzboxes (thanks bluemethod: the window said Narrator all through)
+            local i, at = turn, GetTime() - startedAt
+            while turns and turns[i + 1] and at >= turns[i + 1].from do i = i + 1 end
+            if turns and i ~= turn then
+                turn = i
+                setHead(turns[i].name, currentKey, self.compact)
+            end
             if talking() then self.time:SetText(clock(GetTime() - startedAt) .. " / " .. clock(current.d or 0)) end
         end
         -- the player row: always in the window; cinematic shows it only while the mouse is on the band (its place
         -- stays reserved, so nothing moves)
         local over = not self.minimal and (not self.cine or self:IsMouseOver())
         if over ~= self.player:IsShown() then self.player:SetShown(over) end
-        -- the size grip: not on a locked window, one another addon holds or the slim one without subtitles; seen only
-        -- with the mouse on the window
-        local sizable = not (ns.settings.lockSpeaker or self.dockedTo or self.compact)
+        -- the size grip: not on a locked window or one another addon holds; seen only with the mouse on the window
+        local sizable = not (ns.settings.lockSpeaker or self.dockedTo)
         if sizable ~= self.grip:IsShown() then self.grip:SetShown(sizable) end
         if sizable then self.grip:SetAlpha((self:IsMouseOver() or self.grip:GetScript("OnUpdate")) and 1 or 0) end
     end)
@@ -701,18 +712,9 @@ local function showModel(who)
     return info
 end
 
-function T.Show(entry, key)
-    if not f then create() end
-    lingerToken = lingerToken + 1
-    current, startedAt, currentKey = entry, GetTime(), key
-    f.duration = entry.d -- shown as 0:31 / 0:31 once the line has ended
-    f.updateControls()
-    local subtitle = ns.settings.subtitles and ns.Voice.Subtitle(key) or nil
-    if ns.Speech and ns.Speech.Bubbled(key) then subtitle = nil end -- the bubble over their head has the words
-    local compact = not (subtitle and subtitle ~= "")
-    f.applySize() -- the subtitle size changes only here, with a new line: its pages are cut for it
-    applyStyle(compact)
-    local who = (entry.w and entry.w ~= "") and entry.w or "Narrator"  -- the voice data names these two in English
+-- The head: who is speaking, the title beside the name and the portrait (the NPC's model, the narrator's book). A line in
+-- more than one voice changes it as it goes (OnUpdate).
+function setHead(who, key, compact)
     f.name:SetText(who == "Narrator" and L["Narrator"] or who)
     if who == "You" then
         pcall(f.model.ClearModel, f.model)
@@ -769,6 +771,31 @@ function T.Show(entry, key)
         f.title:ClearAllPoints()
         f.title:SetPoint("BOTTOMLEFT", f.name, "BOTTOMLEFT", width + 8, 1); f.title:SetPoint("RIGHT", -36, 0)
     end
+end
+
+function T.Show(entry, key)
+    if not f then create() end
+    lingerToken = lingerToken + 1
+    current, startedAt, currentKey = entry, GetTime(), key
+    f.duration = entry.d -- shown as 0:31 / 0:31 once the line has ended
+    f.updateControls()
+    local subtitle = ns.settings.subtitles and ns.Voice.Subtitle(key) or nil
+    if ns.Speech and ns.Speech.Bubbled(key) then subtitle = nil end -- the bubble over their head has the words
+    local compact = not (subtitle and subtitle ~= "")
+    f.applySize() -- the subtitle size changes only here, with a new line: its pages are cut for it
+    applyStyle(compact)
+    local who = (entry.w and entry.w ~= "") and entry.w or "Narrator"  -- the voice data names these two in English
+    -- who speaks when, in a line read by more than one voice (the pack's "0.0,4.64,Narrator|4.99,16.83,Wizbang
+    -- Cranktoggle|..."): the head starts with the first of them
+    turns, turn = nil, 1
+    if type(entry.s) == "string" then
+        local list = {}
+        for from, name in entry.s:gmatch("([%d%.]+),[%d%.]+,([^|]+)") do
+            list[#list + 1] = { from = tonumber(from), name = name }
+        end
+        if #list > 1 then turns, who = list, list[1].name end
+    end
+    setHead(who, key, compact)
     f.aboutText = about(key)
     f.about:SetText(f.aboutText)
     -- subtitles: long text is shown a page at a time, in step with the voice
