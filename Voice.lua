@@ -669,6 +669,9 @@ function V.GreetingKey(npcID, text)
 end
 
 local function isGreeting(key) return key and (key:sub(1, 4) == "gos:" or key:sub(1, 3) == "qg:") end
+-- pages you clicked to in a conversation (the answer behind a chat option), not its welcome: they wait their turn like
+-- a quest page, also once the window is closed
+local answers = {}
 
 -- With the game's own greetings audible, the first line of a new conversation waits until the NPC's
 -- "Greetings" is over instead of talking over it. Walking away before then cancels it.
@@ -687,14 +690,15 @@ local function afterGameGreeting(fn)
     if guid and canaccessvalue and not canaccessvalue(guid) then guid = nil end -- (npcGUID already does; the checker wants it here)
     -- gossip closing into a quest page (same frame) is still the same conversation
     local fresh = guid and (guid ~= lastGUID or (ended and GetTime() - endTime > 0.5))
+    local further = guid ~= nil and not fresh -- a page of the conversation already open, not its welcome
     lastGUID, ended = guid, false
-    if not fresh or (ns.GreetingsMuted and ns.GreetingsMuted()) or ns.settings.journalOnly then return fn() end
+    if not fresh or (ns.GreetingsMuted and ns.GreetingsMuted()) or ns.settings.journalOnly then return fn(further) end
     C_Timer.After(GAME_GREETING, function()
         -- clicked on to another page in the meantime: that one has played already, this one is out of date
         if waitID ~= mine then return end
         local now = npcGUID()
         if now and canaccessvalue and not canaccessvalue(now) then now = nil end
-        if now == guid then fn() end
+        if now == guid then fn(further) end
     end)
 end
 local closeEv = CreateFrame("Frame")
@@ -703,16 +707,19 @@ local openEv = CreateFrame("Frame")
 for _, e in ipairs({ "GOSSIP_SHOW", "QUEST_GREETING", "QUEST_DETAIL", "QUEST_PROGRESS", "QUEST_COMPLETE" }) do
     pcall(openEv.RegisterEvent, openEv, e)
 end
-openEv:SetScript("OnEvent", function() talking = true end)
+local pageTime -- when the last gossip or quest page opened (DialogueUI's stop that comes with a page is the page change)
+openEv:SetScript("OnEvent", function() talking = true; pageTime = GetTime() end)
+function V.PageTime() return pageTime end
 closeEv:SetScript("OnEvent", function()
     talking = false
     -- held recaps go once the conversation is really over (a gossip page closing into a quest page is not)
     C_Timer.After(0.6, releaseRecaps)
     ended, endTime = true, GetTime()
     -- a greeting still waiting its turn belongs to a conversation that is over: it would play long after (the wind
-    -- rider master greeting you in Thunder Bluff), so it goes, and greets you next time instead (thanks Alche)
+    -- rider master greeting you in Thunder Bluff), so it goes, and greets you next time instead (thanks Alche). A page
+    -- you clicked to stays: you asked for it (the paladins of Touring the Grounds; thanks Donkeyman)
     for i = #(queue or {}), 1, -1 do
-        if isGreeting(queue[i]) then
+        if isGreeting(queue[i]) and not answers[queue[i]] then
             ns.char.greeted[queue[i]] = nil
             table.remove(queue, i)
         end
@@ -723,10 +730,10 @@ end)
 local onGreeting
 function V.OnGreeting(...)
     local args = { ... }
-    afterGameGreeting(function() onGreeting(unpack(args, 1, 4)) end)
+    afterGameGreeting(function(further) onGreeting(args[1], args[2], args[3], args[4], further) end)
 end
 
-function onGreeting(npcID, key, text, female)
+function onGreeting(npcID, key, text, female, clicked)
     local entry = key and V.Get(key)
     if ns.settings.debug then
         ns.pr(("debug: greeting from npc %s -> %s"):format(tostring(npcID),
@@ -753,7 +760,8 @@ function onGreeting(npcID, key, text, female)
         if ns.settings.debug then ns.pr(("debug: greeting on cooldown, %d s left"):format(wait - (time() - last))) end
         return
     end
-    -- a greeting never cuts anyone off: it waits for whoever is talking. Only the newest greeting waits.
+    -- a greeting never cuts anyone off: it waits for whoever is talking. Only the newest welcome waits; the pages you
+    -- clicked to wait in order behind the line they came after (the paladins' long welcomes in Touring the Grounds)
     local now = V.PlayingKey()
     if now == key then return end
     if text then V.SetText(key, text) end
@@ -763,8 +771,11 @@ function onGreeting(npcID, key, text, female)
         return
     end
     if queue then
-        for i = #queue, 1, -1 do if isGreeting(queue[i]) then table.remove(queue, i) end end
+        for i = #queue, 1, -1 do
+            if isGreeting(queue[i]) and not answers[queue[i]] then table.remove(queue, i) end
+        end
     end
+    answers[key] = clicked or nil
     if V.Enqueue(key) then ns.char.greeted[key] = time() end
 end
 

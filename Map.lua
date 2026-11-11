@@ -248,6 +248,19 @@ function M.Waypoint(zone, x, y, title)
     return false
 end
 
+-- The world map at a zone (a land's Places page: Show on map). False when the zone has no map of its own.
+function M.ShowZone(zone)
+    local id = zoneMapID(zone)
+    if not (id and WorldMapFrame and WorldMapFrame.SetMapID) then return false end
+    local ok = pcall(function()
+        if not WorldMapFrame:IsShown() then
+            if ToggleWorldMap then ToggleWorldMap() else ShowUIPanel(WorldMapFrame) end
+        end
+        WorldMapFrame:SetMapID(id)
+    end)
+    return ok
+end
+
 -- can this character ever take the quest (race and class; level comes with time)
 function M.ForMe(id)
     local q = M.QuestInfo(id)
@@ -304,8 +317,112 @@ local function acquire(template, data, x, y)
     return pin
 end
 
+-- Places not found yet, with Show what's left (the user: "a map overlay for where the zones you're missing are"): each
+-- glows on its zone map in its own shape, the game's own art of it tinted gold, with its name in its middle. From the
+-- map's own pieces of fog (Lore placeArt, tools/place_art.py), laid out in tiles as the game lays out the parts of the
+-- map you've explored. The small places inside them (a mine, an inn) and the cities' places have no piece: no glow.
+-- Nothing in it takes the mouse, so the map's own clicks go through.
+local glow, glowTex, glowText = nil, {}, {}
+-- the user's first look (Scarlet Monastery): two names on one spot, and twice as bright there. A piece of the map can be
+-- two places (Terrace of Repose and Whispering Gardens are one): drawn once, and their names under each other; the names
+-- white on a dark edge so they read on the gold. The strength: 0.55 at first, 0.35 "not bright enough", so between
+local GLOW = { 1, 0.78, 0.3, 0.45 }
+
+local function hideGlow()
+    for _, t in ipairs(glowTex) do t:Hide() end
+    for _, t in ipairs(glowText) do t:Hide() end
+end
+
+local function addPlaceGlow(map, zone)
+    local art = ns.Lore and ns.Lore.placeArt and ns.Lore.placeArt[zone]
+    if not (art and art.size and art.places) then return end
+    local w, h, tw, th = strsplit(",", art.size)
+    w, h, tw, th = tonumber(w), tonumber(h), tonumber(tw), tonumber(th)
+    local canvas = map:GetCanvas()
+    if not (w and h and tw and th and canvas) then return end
+    local s = canvas:GetWidth() / w -- the canvas, in the map art's own pixels
+    glow = glow or CreateFrame("Frame", nil, canvas)
+    glow:SetParent(canvas)
+    glow:ClearAllPoints(); glow:SetPoint("TOPLEFT", canvas, "TOPLEFT", 0, 0)
+    glow:SetSize(canvas:GetWidth(), canvas:GetHeight())
+    glow:SetFrameLevel(canvas:GetFrameLevel() + 2400) -- over the map and what you've explored of it, under our pins
+    glow:Show()
+    local seen, nt = ns.char.areaSeen or {}, 0
+    local drawn, names, spots = {}, {}, {} -- pieces drawn already; the names at each spot, and the spots in order
+    for name, pieces in pairs(art.places) do
+        local key = "area:" .. zone .. ":" .. name
+        if ns.audio[key] and not seen[key] then
+            local named = false
+            for piece in pieces:gmatch("[^;]+") do
+                local x, y, pw, ph, cx, cy, files = strsplit(",", piece)
+                if not named then -- the name at its first piece's middle
+                    local at = cx .. "," .. cy
+                    if not names[at] then names[at] = {}; spots[#spots + 1] = at end
+                    table.insert(names[at], name)
+                    named = true
+                end
+                local shape = table.concat({ x, y, pw, ph }, ",")
+                if drawn[shape] then x = nil end -- another place's piece too: drawn once
+                drawn[shape] = true
+                x, y, pw, ph = tonumber(x), tonumber(y), tonumber(pw), tonumber(ph)
+                local ids = {}
+                for id in (x and files or ""):gmatch("%d+") do ids[#ids + 1] = tonumber(id) end
+                local wide, tall = x and math.ceil(pw / tw) or 0, x and math.ceil(ph / th) or 0
+                for j = 1, tall do
+                    -- the last row and column are cut from a smaller file (16, 32 ... pixels): the part that is art
+                    local rowH, fileH = th, th
+                    if j == tall then
+                        rowH = ph % th == 0 and th or ph % th
+                        fileH = 16
+                        while fileH < rowH do fileH = fileH * 2 end
+                    end
+                    for k = 1, wide do
+                        local colW, fileW = tw, tw
+                        if k == wide then
+                            colW = pw % tw == 0 and tw or pw % tw
+                            fileW = 16
+                            while fileW < colW do fileW = fileW * 2 end
+                        end
+                        local id = ids[(j - 1) * wide + k]
+                        if id then
+                            nt = nt + 1
+                            local t = glowTex[nt]
+                            if not t then t = glow:CreateTexture(nil, "ARTWORK"); glowTex[nt] = t end
+                            t:SetTexture(id)
+                            t:SetTexCoord(0, colW / fileW, 0, rowH / fileH)
+                            t:SetSize(colW * s, rowH * s)
+                            t:ClearAllPoints()
+                            t:SetPoint("TOPLEFT", glow, "TOPLEFT", (x + tw * (k - 1)) * s, -(y + th * (j - 1)) * s)
+                            t:SetBlendMode("ADD")
+                            t:SetVertexColor(GLOW[1], GLOW[2], GLOW[3], GLOW[4])
+                            t:Show()
+                        end
+                    end
+                end
+            end
+        end
+    end
+    for i, at in ipairs(spots) do
+        local mx, my = strsplit(",", at)
+        mx, my = tonumber(mx), tonumber(my)
+        local fs = glowText[i]
+        if not fs then
+            fs = glow:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+            local font, size = fs:GetFont()
+            if font then fs:SetFont(font, size or 12, "OUTLINE") end
+            fs:SetShadowColor(0, 0, 0, 1); fs:SetShadowOffset(1, -1)
+            glowText[i] = fs
+        end
+        table.sort(names[at])
+        fs:SetText(table.concat(names[at], "\n"))
+        fs:ClearAllPoints(); fs:SetPoint("CENTER", glow, "TOPLEFT", (mx or 0) * s, -(my or 0) * s)
+        fs:Show()
+    end
+end
+
 local function releaseAll()
     for _, list in pairs(own) do for _, pin in ipairs(list) do pin:Hide() end end
+    hideGlow()
 end
 
 local function addQuestPins(map, zone)
@@ -711,6 +828,14 @@ local function refresh(self)
         local ok, err = pcall(addQuestPins, map, zone)
         if not ok and ns.settings.debug then ns.pr("debug: quest markers: " .. tostring(err)) end
     end
+    -- the places not found yet glow: their own switch, in the map's filter menu and the options (the user: "have this as
+    -- part of the map filter"); never with Hide what I haven't found; places are told by the voices, so not with
+    -- Journal only
+    if Enum and Enum.UIMapType and info.mapType == Enum.UIMapType.Zone and ns.settings.placeGlow ~= false
+            and not ns.settings.hideUnfound and not ns.settings.journalOnly then
+        local ok, err = pcall(addPlaceGlow, map, zone)
+        if not ok and ns.settings.debug then ns.pr("debug: place glow: " .. tostring(err)) end
+    end
     if not ns.settings.mapPins then return end
     local pins = {}
     for _, a in ipairs((ns.Lore and ns.Lore.arcs) or {}) do
@@ -744,6 +869,8 @@ table.insert(ns.onLogin, function()
         root:CreateCheckbox(L["Story panel"], get, set)
         get, set = toggle("questMarkers", false)
         root:CreateCheckbox(L["Quest givers (!)"], get, set)
+        get, set = toggle("placeGlow", true)
+        root:CreateCheckbox(L["Places to find"], get, set)
     end)
 end)
 

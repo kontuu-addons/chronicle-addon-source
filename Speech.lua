@@ -139,6 +139,16 @@ end
 
 -- chatter that came while other chatter was talking: played after it, if still fresh (10 seconds)
 local waiting = {}
+
+-- a quest just taken or handed in: what is said around you in the next half minute is the quest's own scene (the one
+-- you handed it to answering, someone else stepping in, the campfire talk of The Great Outdoors), so it waits for
+-- the quest's voice instead of being lost under it. Whoever spoke in it stays part of it for two minutes, so a longer
+-- scene keeps its lines (thanks Peter)
+local STORY, SCENE = 30, 120
+local storyUntil, inScene = 0, {}
+local questEv = CreateFrame("Frame")
+for _, e in ipairs({ "QUEST_ACCEPTED", "QUEST_TURNED_IN" }) do pcall(questEv.RegisterEvent, questEv, e) end
+questEv:SetScript("OnEvent", function() storyUntil = GetTime() + STORY end)
 local function sayNow(said)
     bubbled[said.key] = said.bubbled
     ns.Voice.SetText(said.key, said.text)
@@ -154,7 +164,7 @@ queueWatch:SetScript("OnUpdate", function(_, dt)
     queueWait = 0.2
     if ns.Voice.IsPlaying() or ns.Voice.Paused() then return end
     local said = table.remove(waiting, 1)
-    if said and GetTime() - said.at < 10 then sayNow(said) end
+    if said and GetTime() - said.at < (said.own and 60 or 10) then sayNow(said) end
 end)
 
 ev:SetScript("OnEvent", function(_, event, text, speaker, _, _, target, _, _, _, _, _, _, guid)
@@ -182,12 +192,18 @@ ev:SetScript("OnEvent", function(_, event, text, speaker, _, _, target, _, _, _,
         bubbled = (event == "CHAT_MSG_MONSTER_SAY" or event == "CHAT_MSG_MONSTER_YELL")
             and GetCVarBool and GetCVarBool("chatBubbles") or false,
     }
+    local t = GetTime()
+    if t <= storyUntil then inScene[speaker] = t + SCENE end
     if ns.Voice.Paused() then return end -- you paused to talk: the chatter around you doesn't break in
     if ns.Voice.IsPlaying() then
         -- never over quests and recaps; but an answer to someone still talking waits its turn (the Stormwind
-        -- kids and their dolly answer each other; the reply used to be lost, thanks Azona)
+        -- kids and their dolly answer each other; the reply used to be lost, thanks Azona). And a quest's scene
+        -- (above), or the one whose quest page is playing, waits too, longer and more of it
         local k = ns.Voice.PlayingKey() or ""
-        if (k:sub(1, 4) == "say:" or k:sub(1, 5) == "sayr:") and #waiting < 3 then waiting[#waiting + 1] = said end
+        local now = ns.Voice.Get(k)
+        said.own = (inScene[speaker] or 0) >= t or (now ~= nil and now.w == speaker)
+        local chatter = k:sub(1, 4) == "say:" or k:sub(1, 5) == "sayr:"
+        if (said.own and #waiting < 8) or (chatter and #waiting < 3) then waiting[#waiting + 1] = said end
         return
     end
     sayNow(said)
