@@ -293,9 +293,26 @@ end
 
 local ttsActive = false
 
+-- A quest page or book page counts as heard (option "Don't repeat lines I've heard") once at least half of it has
+-- played, not the moment it starts: a page cut off at once (by a line waiting before it, a window closed, the game's
+-- own sounds) plays again the next time, instead of staying silent for good (thanks Azona)
+local heardKey, heardNeed
+local startedTime = 0
+local function markHeard()
+    if not heardKey then return end
+    local played = GetTime() - startedTime
+    if played >= heardNeed then
+        if ns.char and ns.char.heard then ns.char.heard[heardKey] = true end
+        if ns.settings.debug then ns.pr(("debug: heard %s (%.1f s played)"):format(heardKey, played)) end
+    elseif ns.settings.debug then
+        ns.pr(("debug: %s stopped after %.1f s: not counted as heard"):format(heardKey, played))
+    end
+    heardKey = nil
+end
+
 local function stopSound()
     clearTimer()
-    if handle then StopSound(handle, 400); handle = nil end
+    if handle then markHeard(); StopSound(handle, 400); handle = nil end
     if ns.db then ns.db.playing = nil end
     if ttsActive then
         ttsActive = false
@@ -357,7 +374,6 @@ local function queueChanged()
     if ns.TalkingHead and ns.TalkingHead.UpdateQueue then pcall(ns.TalkingHead.UpdateQueue) end
 end
 
-local startedTime = 0
 local function start(entry, key)
     paused = nil -- something new is talking: the paused line is let go
     stopSound()
@@ -383,8 +399,10 @@ local function start(entry, key)
     end
     handle = h
     playingKey = key -- only a line that really plays: Replay and Back work on it
-    -- heard once it really plays: a file that failed would otherwise be skipped as "already heard" from then on
-    if ns.char and ns.char.heard and key and (key:match("^q%d") or key:sub(1, 4) == "book") then ns.char.heard[key] = true end
+    -- heard once half of it has played (markHeard, when it ends or is stopped): a file that failed, or a page cut off at
+    -- once, would otherwise be skipped as "already heard" from then on
+    heardKey = key and (key:match("^q%d") or key:sub(1, 4) == "book") and key or nil
+    heardNeed = (entry.d or 5) * 0.5
     -- a campfire tale counts as heard once it really plays, not when it was queued (a Play may drop the queue)
     local tale = ns.char and key and key:match("^tale:(.+)")
     if tale then ns.char.tales = ns.char.tales or {}; ns.char.tales[tale] = time() end
@@ -398,6 +416,7 @@ local function start(entry, key)
     ns.db.playing = h -- a /reload keeps the sound going; the next login stops it
     showBar(entry, key)
     timer = C_Timer.NewTimer((entry.d or 5) + 0.35, function()
+        markHeard() -- played to the end
         handle, timer = nil, nil
         ns.db.playing = nil
         if queue then playNext() end

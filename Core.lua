@@ -102,7 +102,7 @@ local DEFAULTS = {
     reactions = false,   -- your own character says a short line after some turn-ins (off by default)
     mapPins = true,      -- story chapters on the world map (the books)
     storyPanel = true,   -- the zone's story panel on the world map, and the chapter count on continents
-    placeGlow = true,    -- the places of a zone not found yet glow on the world map (not with hideUnfound)
+    placeGlow = false,   -- the places of a zone not found yet show gold on the world map (not with hideUnfound)
     showLeft = false,    -- quests still to do and where undiscovered chapters start (journal, map)
     logStory = true,     -- "The story so far" beside the quest log
     campfire = true,     -- "By the fire": a note near a camp fire, and the zone's tale when you sit down
@@ -302,6 +302,12 @@ local function applyDefaults(t, d)
     for k, v in pairs(d) do if t[k] == nil then t[k] = v end end
 end
 
+-- a setting an update changes once for everyone (the defaults only fill in what's missing)
+local function settingsOnce(db)
+    -- 1.3.0 turned the places' glow on for everyone: it is for those who turn it on (thanks sesshomaru4138)
+    if not db.placeGlowOff then db.settings.placeGlow = false; db.placeGlowOff = true end
+end
+
 local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
 ev:RegisterEvent("PLAYER_LOGIN")
@@ -316,6 +322,7 @@ ev:SetScript("OnEvent", function(_, event, arg)
         db.settings = db.settings or {}
         db.uiprobe = nil -- a developer's look at the UI, read from the file after the session: not kept in memory
         applyDefaults(db.settings, DEFAULTS)
+        settingsOnce(db)
         -- 0.1 stored quest log headers as the zone; real captures also have a map ID
         for _, q in pairs(db.quests) do
             if q.fromLog and q.zone and not q.map then q.category, q.zone = q.category or q.zone, nil end
