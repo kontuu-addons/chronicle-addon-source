@@ -1212,6 +1212,19 @@ local function makeBadge()
     return f
 end
 
+-- a level milestone you have reached: the narrator's word at that level (it came once, as a note), played or stopped
+-- by a click; its words on hover
+local function makeMilestone()
+    local f = makeBadge()
+    f.icon:SetTexture("Interface\\Icons\\Ability_Warrior_BattleShout")
+    f:SetScript("OnClick", function(self)
+        if not self.key then return end
+        click()
+        if ns.Voice.Owner() == self then ns.Voice.Stop() else ns.Voice.PlayQueue({ self.key }, self) end
+    end)
+    return f
+end
+
 local function makeChapterCard()
     local f = chronBox()
     f:SetFrameLevel(page:GetFrameLevel() + 1)
@@ -3143,6 +3156,22 @@ local function renderChronicle()
     items = {}
     for _, a in ipairs(attunements()) do if not a.nextId then items[#items + 1] = { text = a.title, tip = L["Attuned"] } end end
     badges(L["Attunements"], items)
+    -- the narrator's word at every tenth level reached, to hear again
+    local reached = ns.Milestones and ns.Milestones.Reached() or {}
+    if #reached > 0 then
+        y, n = placeTodos({ L["Level milestones"] }, y, n, pw)
+        local x = 0
+        for _, m in ipairs(reached) do
+            local b = chronGet("milestone", makeMilestone)
+            b.key, b.tip = m.key, ns.Voice.Subtitle(m.key)
+            b.label:SetText((L["Level %d"]):format(m.level))
+            local w = b.label:GetStringWidth() + 34
+            if x > 0 and x + w > width then x = 0; y = y - 30 end
+            b:SetSize(w, 24); b:SetPoint("TOPLEFT", page, "TOPLEFT", x, y)
+            x = x + w + 6
+        end
+        y = y - 24 - 20
+    end
     page:SetHeight(-y + 20)
 end
 

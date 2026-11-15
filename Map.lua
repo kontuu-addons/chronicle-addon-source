@@ -249,9 +249,13 @@ function M.Waypoint(zone, x, y, title)
 end
 
 -- The world map at a zone (a land's Places page: Show on map). False when the zone has no map of its own.
+-- The land's places to find show there even with their switch off (the user: "when they click what is missing it
+-- opens that map with the highlights"), until the map closes
+local shownFor
 function M.ShowZone(zone)
     local id = zoneMapID(zone)
     if not (id and WorldMapFrame and WorldMapFrame.SetMapID) then return false end
+    shownFor = zone
     local ok = pcall(function()
         if not WorldMapFrame:IsShown() then
             if ToggleWorldMap then ToggleWorldMap() else ShowUIPanel(WorldMapFrame) end
@@ -325,8 +329,9 @@ end
 local glow, glowTex, glowText = nil, {}, {}
 -- the user's first look (Scarlet Monastery): two names on one spot, and twice as bright there. A piece of the map can be
 -- two places (Terrace of Repose and Whispering Gardens are one): drawn once, and their names under each other; the names
--- white on a dark edge so they read on the gold. The strength: 0.55 at first, 0.35 "not bright enough", so between
-local GLOW = { 1, 0.78, 0.3, 0.45 }
+-- white on a dark edge so they read on the gold. Laid on as added light it lit a pale map with little found like a lamp
+-- ("like looking into the sun", Thousand Needles): a gold tint over the map instead, never brighter than the map's art
+local GLOW = { 1, 0.78, 0.3, 0.6 }
 
 local function hideGlow()
     for _, t in ipairs(glowTex) do t:Hide() end
@@ -393,7 +398,8 @@ local function addPlaceGlow(map, zone)
                             t:SetSize(colW * s, rowH * s)
                             t:ClearAllPoints()
                             t:SetPoint("TOPLEFT", glow, "TOPLEFT", (x + tw * (k - 1)) * s, -(y + th * (j - 1)) * s)
-                            t:SetBlendMode("ADD")
+                            t:SetBlendMode("BLEND")
+                            t:SetDesaturated(true)
                             t:SetVertexColor(GLOW[1], GLOW[2], GLOW[3], GLOW[4])
                             t:Show()
                         end
@@ -829,9 +835,10 @@ local function refresh(self)
         if not ok and ns.settings.debug then ns.pr("debug: quest markers: " .. tostring(err)) end
     end
     -- the places not found yet glow: their own switch, in the map's filter menu and the options (the user: "have this as
-    -- part of the map filter"); never with Hide what I haven't found; places are told by the voices, so not with
-    -- Journal only
-    if Enum and Enum.UIMapType and info.mapType == Enum.UIMapType.Zone and ns.settings.placeGlow ~= false
+    -- part of the map filter") or Show on map; never with Hide what I haven't found; places are told by the voices, so
+    -- not with Journal only
+    if Enum and Enum.UIMapType and info.mapType == Enum.UIMapType.Zone
+            and (ns.settings.placeGlow ~= false or shownFor == zone)
             and not ns.settings.hideUnfound and not ns.settings.journalOnly then
         local ok, err = pcall(addPlaceGlow, map, zone)
         if not ok and ns.settings.debug then ns.pr("debug: place glow: " .. tostring(err)) end
@@ -869,7 +876,7 @@ table.insert(ns.onLogin, function()
         root:CreateCheckbox(L["Story panel"], get, set)
         get, set = toggle("questMarkers", false)
         root:CreateCheckbox(L["Quest givers (!)"], get, set)
-        get, set = toggle("placeGlow", true)
+        get, set = toggle("placeGlow", false)
         root:CreateCheckbox(L["Places to find"], get, set)
     end)
 end)
@@ -886,6 +893,7 @@ table.insert(ns.onLogin, function()
         releaseAll()
         if panel then panel:Hide() end
     end
+    provider.OnHide = function() shownFor = nil end -- the map closed: Show on map's places with it
     local ok, err = pcall(WorldMapFrame.AddDataProvider, WorldMapFrame, provider)
     if not ok then provider = nil; ns.pr(L["map pins are not available in this client: "] .. tostring(err)) end
 end)

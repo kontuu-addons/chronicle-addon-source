@@ -51,16 +51,38 @@ local function suggestions(level, side, home)
     return { unpack(near, 1, math.min(3, #near)) }
 end
 
-local function onLevel(level)
-    if not ns.settings.levelMilestones or level % 10 ~= 0 then return end
+local M = {}
+ns.Milestones = M
+
+-- the narrator's line for a tenth level: the race's own where it has one, else the side's
+function M.KeyFor(level)
     local faction = UnitFactionGroup("player")
-    local side = faction == "Horde" and "H" or "A"
     local _, race = UnitRace("player")
     race = ns.clean(race)
     local key = ("lvl:%d|%s"):format(level, faction == "Horde" and "Horde" or "Alliance")
     local own = race and OWN[race] and ("lvl:%d|%s"):format(level, OWN[race])
     -- their own line when it has a voice (or neither has one: Journal only), so old voice packs keep the side's
     if own and ns.Voice.Subtitle(own) and (ns.Voice.Get(own) or not ns.Voice.Get(key)) then key = own end
+    return key
+end
+
+-- the milestones this character has reached, to hear again in the journal (the note came only once)
+function M.Reached()
+    local out = {}
+    for level = 10, math.min(60, UnitLevel("player") or 1), 10 do
+        local key = M.KeyFor(level)
+        if ns.Voice.Subtitle(key) then out[#out + 1] = { level = level, key = key } end
+    end
+    return out
+end
+
+local function onLevel(level)
+    if not ns.settings.levelMilestones or level % 10 ~= 0 then return end
+    local faction = UnitFactionGroup("player")
+    local side = faction == "Horde" and "H" or "A"
+    local _, race = UnitRace("player")
+    race = ns.clean(race)
+    local key = M.KeyFor(level)
     local line = ns.Voice.Subtitle(key)
     local zones = level < 60 and suggestions(level, side, race and HOME[race]) or {}
     local text = #zones > 0 and (L["New stories at your level: %s"]):format(table.concat(zones, ", ")) or line
