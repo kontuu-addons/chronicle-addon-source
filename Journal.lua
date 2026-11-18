@@ -903,6 +903,13 @@ local function placeTodos(items, y, n, pw, x, ruled)
     return y, n
 end
 
+-- a story's ending under How it ends: its words, and a click hears it again when it has a voice (thanks AstroCat: "is
+-- there a button to hear the Epilogue of Zone again?" Only the end of Play zone story or Tell my chronicle told it)
+local function endingRow(title, key)
+    local voiced = ns.Voice.Get(key) ~= nil
+    return { title = title, keys = voiced and { key } or nil, from = voiced and L["Click to hear it"] or nil }
+end
+
 -- the way to a zone's own page (Zone overview); for the Class, Profession and Events chapters it lists only what
 -- applies to this character (J.ArcForMe)
 local function showZoneLinks(zone)
@@ -1281,6 +1288,13 @@ local function renderZone(zone)
     header.sub:SetText(story and L["You have seen this story through"] or levels)
     -- the zone's longer history, for those who want all the lore: the button at the top right
     listenButton({ "hist:" .. zone }, L["History"])
+    -- and its epilogue under it, once you have seen the story through (AstroCat: "is there a button to hear the
+    -- Epilogue of Zone again?"; How it ends further down plays it too)
+    local epi = story and ns.Endings.EpilogueKey(zone)
+    local eb = header.epilogue
+    eb.keys = epi and { "epi:" .. epi } or nil
+    eb:SetText(ns.Voice.Owner() == eb and L["Stop"] or L["Epilogue"])
+    eb:SetShown(epi and ns.Voice.Get("epi:" .. epi) ~= nil or false)
     header.intro:SetWidth(width)
     -- the campfire tales heard by a fire here (click: hear one again)
     local tale
@@ -1367,9 +1381,8 @@ local function renderZone(zone)
     y = y - 10
     -- how the story ended here: the zone's epilogue once you have seen it through, to read again as on a dungeon's
     -- page (thanks emmaloui: it was only in the note that came with it, "how can I read that pop up again?")
-    local epi = story and ns.Endings.EpilogueKey(zone)
     if epi then
-        y, n = placeTodos({ L["How it ends"], { title = lore().epilogue[epi] } }, y, n, pw)
+        y, n = placeTodos({ L["How it ends"], endingRow(lore().epilogue[epi], "epi:" .. epi) }, y, n, pw)
         y = y - 10
     end
     -- books, plaques and letters found here: the ones you have read (click: hear it), the others only as a place
@@ -2136,7 +2149,7 @@ local function renderDungeon(d)
     if #ends > 0 then
         for _, e in ipairs(ends) do
             local wing = e.wing ~= d.name and ("|cff7a4b12" .. e.wing:match(": (.+)$") .. ":|r ") or ""
-            y, n = placeTodos({ { title = wing .. e.text } }, y, n, pw)
+            y, n = placeTodos({ endingRow(wing .. e.text, "dend:" .. e.wing .. "|" .. e.boss) }, y, n, pw)
         end
     else
         y, n = placeTodos({ { title = "|cff7a6a55" .. L["Defeat its last boss and the narrator tells how the story ends."] .. "|r" } }, y, n, pw)
@@ -3782,6 +3795,7 @@ function J.OnVoiceChanged()
     tellInfo()
     header.recap:SetEnabled(header.recap.anyAudio or by == header.recap)
     header.zone:SetText(by == header.zone and L["Stop"] or L["Play zone story"])
+    header.epilogue:SetText(by == header.epilogue and L["Stop"] or L["Epilogue"])
     if person.about then person.about:SetText(by == person.about and L["Stop"] or L["Who are they?"]) end
     for _, e in ipairs(beast.entries or {}) do e.play:SetText(by == e.play and L["Stop"] or L["Listen"]) end
     for _, r in ipairs(entryRows) do
@@ -3858,12 +3872,19 @@ local function create()
         frame.titleText = t
         local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
         close:SetPoint("TOPRIGHT", 2, 2)
+        frame.CloseButton = close -- as the new style's window has it: a controller's B clicks it
     end
     frame:EnableMouse(true); frame:SetMovable(true); frame:SetClampedToScreen(true)
     frame:RegisterForDrag("LeftButton")
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     tinsert(UISpecialFrames, "ChronicleJournalFrame") -- Escape closes it
+    -- its X hides it itself: the game's own close (HideUIPanel) refuses an addon's window in a fight, so the X did
+    -- nothing then (the user: "i cant seem to close any windows with X in top right corner when in combat")
+    local closeX = rawget(frame, "CloseButton")
+    if closeX then closeX:SetScript("OnClick", function() frame:Hide() end) end
+    -- with a controller in WoW: Forever's gamepad mode, the D-pad moves through it (Core.lua)
+    if ns.PadNav then ns.PadNav(frame) end
     -- in front when opened or clicked, like the game's own windows (the story-so-far page beside the map sits high
     -- in the same layer and used to cover it)
     frame:SetToplevel(true)
@@ -4047,6 +4068,11 @@ local function create()
     end)
     header.zone = button(page, L["Play zone story"], 120); header.zone:SetPoint("TOPRIGHT", header.recap, "BOTTOMRIGHT", 0, -4)
     header.zone:SetScript("OnClick", function(self)
+        toggle(self, function() ns.Voice.PlayQueue(self.keys or {}, self) end)
+    end)
+    -- a zone page's epilogue, under History (with History hidden, still the second row: Back may be in the first)
+    header.epilogue = button(page, L["Epilogue"], 100); header.epilogue:SetPoint("TOPRIGHT", page, "TOPRIGHT", 0, -24)
+    header.epilogue:SetScript("OnClick", function(self)
         toggle(self, function() ns.Voice.PlayQueue(self.keys or {}, self) end)
     end)
     -- the same page behind a button beside Play zone story, easier to find than the grey line

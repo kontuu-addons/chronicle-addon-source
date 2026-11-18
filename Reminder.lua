@@ -133,6 +133,8 @@ local function getToast()
     t.history:Hide()
     local close = CreateFrame("Button", nil, t, "UIPanelCloseButton")
     close:SetSize(24, 24); close:SetPoint("TOPRIGHT", 0, 0)
+    -- hides the note itself: the game's own close refuses an addon's window in a fight (Journal.lua)
+    close:SetScript("OnClick", function() t:Hide() end)
     R.AddOffLink(t)
 
     t:SetScript("OnUpdate", function(self)
@@ -156,14 +158,54 @@ end
 -- a note is up (the bestiary waits for it to go: a new note would take its place)
 function R.Busy() return toast ~= nil and toast:IsShown() end
 
+-- the note that's up, heard as its Listen plays it: for the Play or stop key binding, so a controller (which can't
+-- click the note) hears it too (Donkeyman: the notes with a controller). False when no note with a line is up.
+function R.ListenNote()
+    local t = toast
+    if not (t and t:IsShown() and t.listen:IsShown() and t.keys and #t.keys > 0) then return false end
+    listen(t.keys)
+    t:Hide()
+    return true
+end
+
+-- notes whose lines play by themselves when their box is ticked, waiting their turn like Listen (which then doesn't
+-- play them twice): a Bestiary entry once the fight is over (navible on CurseForge: "instead of needing to click
+-- listen"; Donkeyman), and the other notes with a Listen
+local AUTO = { bestiary = "bestiaryAuto", zoneIntro = "zoneIntroAuto", flightStory = "flightStoryAuto",
+    campfire = "campfireAuto", levelMilestones = "levelMilestonesAuto", zoneRecap = "zoneRecapAuto",
+    dungeonStory = "dungeonStoryAuto" }
+local quiet -- a note set up inside another one (a flight's welcome): the outer note's box decides
+
+-- As wide as what it shows, up to the old 340: the title, the line under it, the buttons in their row, "Don't show
+-- these" (Donkeyman: "lots of dead space in it", a Previously in note with two buttons). Measured at the full width
+-- first: a zone's welcome, cut where the note ends, keeps all of it.
+local WIDEST, NARROWEST = 340, 220
+local function textWidth(fs)
+    return (fs.GetUnboundedStringWidth and fs:GetUnboundedStringWidth()) or fs:GetStringWidth() or 0
+end
+local function fit(t)
+    t:SetWidth(WIDEST)
+    local row = 0
+    for _, b in ipairs({ t.listen, t.journal, t.history }) do
+        if b:IsShown() then row = row + (b:GetWidth() or 0) + 6 end
+    end
+    local off = t.off:IsShown() and (t.off:GetWidth() or 0) + 20 or 0
+    local need = math.max(60 + textWidth(t.title) + 28, 60 + textWidth(t.sub) + 12, 58 + row + 6, off)
+    t:SetWidth(math.max(NARROWEST, math.min(WIDEST, math.ceil(need))))
+end
+
 -- Up it goes for secs, with "Don't show these" in its foot when its kind of note has a box in the options.
 local function present(t, kind, secs)
     kind = OPTION[kind] and kind or nil
     t.kind = kind
     t.off:SetShown(kind ~= nil)
     t:SetHeight(kind and 88 or 74)
+    fit(t)
     t.hideAt = GetTime() + secs
     t:Show()
+    if not quiet and kind and AUTO[kind] and ns.settings[AUTO[kind]] and t.listen:IsShown() and t.keys and #t.keys > 0 then
+        listen(t.keys)
+    end
     return true
 end
 
@@ -337,10 +379,12 @@ function R.ShowFlight(zone)
         t.journal:ClearAllPoints(); t.journal:SetPoint("LEFT", t.listen, "RIGHT", 6, 0)
         local last = titles[#titles]
         t.sub:SetText(last and (L["Last: %s"]):format(last) or (L["%d recaps"]):format(#keys))
-    elseif R.ShowWelcome(zone) then
-        t = toast -- as the welcome set it up (getToast again cleared its Journal button's page and its History)
     else
-        return false
+        quiet = true -- played by the flight's box below, not the welcome's
+        local ok = R.ShowWelcome(zone)
+        quiet = nil
+        if not ok then return false end
+        t = toast -- as the welcome set it up (getToast again cleared its Journal button's page and its History)
     end
     t.title:SetText((L["Flying to %s"]):format(ns.zoneLocal(zone)))
     return present(t, "flightStory", SHOW_FOR)
@@ -352,6 +396,9 @@ local function onZone()
     local zone = GetRealZoneText and ns.zoneEN(ns.clean(GetRealZoneText()))
     if not zone or zone == "" or not ns.char then return end
     if UnitOnTaxi("player") then return end -- flying over a zone isn't visiting it; landing checks again
+    -- not in a fight, nor in one a paladin's bubble only paused: once it is calm. The zone is marked as seen only
+    -- when its welcome could really show, else it is lost for good (thanks Pylo)
+    if not ns.Voice.Calm() then ns.Voice.WhenCalm(onZone) return end
     local inInstance, kind = IsInInstance()
     if inInstance and (kind == "party" or kind == "raid") then
         if ns.settings.dungeonStory ~= false and not announced[zone] then
@@ -361,8 +408,6 @@ local function onZone()
         return
     end
     announced = {} -- leaving resets, so the next run gets the offer again
-    -- not in combat: mark the zone as seen only when the welcome could really show, else it is lost for good (thanks Pylo)
-    if InCombatLockdown() then ev:RegisterEvent("PLAYER_REGEN_ENABLED") return end
     ns.char.zoneSeen = ns.char.zoneSeen or {}
     local last = ns.char.zoneSeen[zone]
     ns.char.zoneSeen[zone] = time()
@@ -374,15 +419,14 @@ local function onZone()
 end
 
 ev = CreateFrame("Frame")
-ev:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_REGEN_ENABLED" then self:UnregisterEvent(event) end -- the fight is over: look at the zone again
-    C_Timer.After(2, onZone)
-end)
+ev:SetScript("OnEvent", function() C_Timer.After(2, onZone) end)
 table.insert(ns.onLogin, function()
     ev:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-    ev:RegisterEvent("PLAYER_CONTROL_GAINED")
     C_Timer.After(6, onZone) -- logging back in after a break counts as returning too
 end)
+-- landing after a flight (Travel.lua; not a stun or a fear ending: a paladin's bubble)
+ns.onLanding = ns.onLanding or {}
+table.insert(ns.onLanding, function() C_Timer.After(2, onZone) end)
 
 -- keep "last seen" fresh while you stay in a zone, so a long session there is not "away"
 C_Timer.NewTicker(300, function()

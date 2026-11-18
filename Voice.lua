@@ -25,9 +25,14 @@ local function sexOf(unit)
     return sex
 end
 
+-- the one a page opened with: a page that waits for another line can start after the window closed, with nobody on
+-- screen to ask then (a Theramore Lieutenant, a woman, turned in The Orc Report in the man's voice; thanks
+-- WildflowerWonder)
+local pageSex = {}
+
 function V.Get(key)
     if not key or ns.settings.journalOnly then return nil end -- journal only: every line counts as unvoiced
-    local sex = speakerSex or sexOf("npc")
+    local sex = speakerSex or pageSex[key] or sexOf("npc")
     local other = (sex == 3 and ":w") or (sex == 2 and ":m") or nil
     if other then
         local e = (ns.female and ns.audio[key .. ":f" .. other]) or ns.audio[key .. other]
@@ -753,6 +758,7 @@ function V.OnGreeting(...)
 end
 
 function onGreeting(npcID, key, text, female, clicked)
+    if key then pageSex[key] = sexOf("npc") end
     local entry = key and V.Get(key)
     if ns.settings.debug then
         ns.pr(("debug: greeting from npc %s -> %s"):format(tostring(npcID),
@@ -868,6 +874,7 @@ end
 
 function onQuestPage(questID, kind, text, female)
     local key = versionKey(questID, kind, otherSpeakerKey(questID, kind, "q" .. questID .. ":" .. kind), text)
+    if key then pageSex[key] = sexOf("npc") end
     local silenced = not key
     local entry = key and V.Get(key)
     key = key or ("q" .. questID .. ":" .. kind)
@@ -1177,3 +1184,61 @@ table.insert(ns.onLogin, function()
         end
     end)
 end)
+
+-- ---------------------------------------------------------------- after a fight
+-- What waits for "once the fight is over" (a Bestiary entry, a famous rare's story, a zone's note, a place found in a
+-- fight) came when the game said you left combat. A paladin's bubble drops combat in the middle of a fight, and they
+-- came then (the user, 2026-11-15: "when i bubble as paladin i think i loose combat and sometimes i get the zone
+-- popup"). Calm: out of combat for CALM seconds, with no bubble or feigned death up.
+local CALM = 5
+-- Divine Shield, Divine Protection, Blessing of Protection, Feign Death: out of the fight a moment, still in it
+local SHIELDS = { 642, 1020, 498, 5573, 1022, 5599, 10278, 5384 }
+local SHIELD_NAMES = { "Divine Shield", "Divine Protection", "Blessing of Protection", "Feign Death" }
+local fightEnd, fights, calmWaiting = -CALM, 0, {}
+local function inFight() return InCombatLockdown() or UnitAffectingCombat("player") end
+local function shielded()
+    local get = C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID
+    for _, id in ipairs(get and SHIELDS or {}) do
+        local ok, a = pcall(get, id)
+        if ok and a ~= nil then return true end
+    end
+    -- English clients: a rank the list above lacks
+    local byName = C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName
+    for _, n in ipairs(byName and SHIELD_NAMES or {}) do
+        local ok, a = pcall(byName, "player", n, "HELPFUL")
+        if ok and a ~= nil then return true end
+    end
+    return false
+end
+
+function V.Calm()
+    return not inFight() and GetTime() - fightEnd >= CALM - 0.1 and not shielded()
+end
+
+local function calmLater()
+    local mine = fights
+    C_Timer.After(CALM, function()
+        if fights ~= mine or #calmWaiting == 0 or inFight() then return end -- a new fight: its end looks again
+        if not V.Calm() then calmLater() return end -- a bubble still up
+        local run = calmWaiting
+        calmWaiting = {}
+        for _, fn in ipairs(run) do fn() end
+    end)
+end
+
+-- fn once it is calm: at once when it is, else after the fight (the same fn waiting twice runs once)
+function V.WhenCalm(fn)
+    if V.Calm() and #calmWaiting == 0 then return fn() end
+    for _, f in ipairs(calmWaiting) do if f == fn then return end end
+    calmWaiting[#calmWaiting + 1] = fn
+    if not inFight() then calmLater() end
+end
+
+local fightEv = CreateFrame("Frame")
+fightEv:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_DISABLED" then fights = fights + 1 return end
+    fightEnd = GetTime()
+    if #calmWaiting > 0 then calmLater() end
+end)
+fightEv:RegisterEvent("PLAYER_REGEN_DISABLED")
+fightEv:RegisterEvent("PLAYER_REGEN_ENABLED")

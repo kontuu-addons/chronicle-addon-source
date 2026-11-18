@@ -116,7 +116,6 @@ function B.Book()
     return book
 end
 
-local function fighting() return InCombatLockdown() or UnitAffectingCombat("player") end
 
 local function show(gid, n)
     local g = B.Group(gid)
@@ -129,7 +128,9 @@ end
 -- the next waiting entry, once the fight is over and no other note is up (one note at a time: it would replace it)
 local function flush()
     flushing = nil
-    if #waiting == 0 or fighting() then return end -- the end of the fight looks again
+    if #waiting == 0 then return end
+    -- once the fight is over, and not a paladin's bubble that only drops combat (Voice.WhenCalm)
+    if not ns.Voice.Calm() then ns.Voice.WhenCalm(flush) return end
     if not ns.settings.bestiary then wipe(waiting) return end -- turned off from a note: the journal has them
     if ns.Reminder and ns.Reminder.Busy and ns.Reminder.Busy() then
         flushing = true
@@ -172,6 +173,4 @@ end
 
 if ns.Rares and ns.Rares.onKill then table.insert(ns.Rares.onKill, B.Killed) end
 
-local ev = CreateFrame("Frame")
-ev:SetScript("OnEvent", function() C_Timer.After(1.5, flush) end) -- the fight is over: what opened during it
-table.insert(ns.onLogin, function() pcall(ev.RegisterEvent, ev, "PLAYER_REGEN_ENABLED") end)
+-- what opened during a fight comes once it is calm again (flush asks Voice.WhenCalm)
