@@ -16,6 +16,9 @@ _G.ChronicleBinding_PlayStop = function()
     if not V then return end
     if V.Paused() then V.Resume() return end
     if V.IsPlaying() then V.Pause() return end
+    -- a note that's up with a Listen: its lines, as its Listen plays them (a controller can't click it; Donkeyman asked
+    -- for the notes with a controller)
+    if ns.Reminder and ns.Reminder.ListenNote and ns.Reminder.ListenNote() then return end
     -- the last line heard again (the lines waiting and Back stay, as with the speaker window's replay), or the quest
     -- window's line
     if V.LastKey() then V.Restart() elseif ns.lastKey then V.Play(ns.lastKey) end
@@ -46,6 +49,73 @@ for _, e in ipairs({ "GAME_PAD_CONNECTED", "GAME_PAD_DISCONNECTED", "CVAR_UPDATE
     pcall(padWatch.RegisterEvent, padWatch, e)
 end
 padWatch:SetScript("OnEvent", updatePadClose)
+
+-- WoW: Forever's own controller mode (Blizzard's console-style gamepad interface): the D-pad moves between a window's
+-- buttons, A clicks, B closes, and a window takes part once it tells the game it is open. Chronicle's journal never
+-- did, so a controller couldn't reach a single button in it (navible on CurseForge: "is it possible to add
+-- functionality so that the gamepad is able to navigate the chronicle journal?"). The game takes this from an addon
+-- only while no fight restricts addons (else "Interface action failed"): a window open as a fight starts leaves the
+-- game's list in that moment (ADDON_RESTRICTION_STATE_CHANGED comes just before the restriction, PLAYER_REGEN_DISABLED
+-- just before the lockdown) and comes back once the fight is over, if still open. So the controller is the player's
+-- in a fight, and nothing of ours is on the list while the game can't hear from us. It goes on the list as a popup,
+-- which the game's "hide every window" (going into HUD mode) passes over: a window that stayed on the list after it
+-- closed would keep that loop going for good.
+local navFrames, navIn, navFight = {}, {}, false
+local function padUI()
+    local ok, on = pcall(function()
+        return GamepadMode and GamepadMode.FrameControlsManager and InputUtil and InputUtil.IsGamepadUIEnabled
+            and InputUtil.IsGamepadUIEnabled()
+    end)
+    return ok and on == true
+end
+-- the restriction the game's list checks (InCombatLockdown on a client without it)
+local function navLocked()
+    local R, E = C_RestrictedActions, Enum and Enum.AddOnRestrictionType
+    if R and R.IsAddOnRestrictionActive and E and E.Combat then
+        local ok, on = pcall(R.IsAddOnRestrictionActive, E.Combat)
+        if ok then return on == true end
+    end
+    return InCombatLockdown() == true
+end
+local function navSync(f)
+    if not padUI() then navIn[f] = nil return end -- the mode off: the game empties its list itself
+    local want = f:IsShown() and not navFight
+    if want == (navIn[f] == true) or navLocked() then return end
+    local m = GamepadMode.FrameControlsManager
+    local ok
+    if want then
+        ok = pcall(m.FrameShown, m, f, true)
+    else
+        ok = pcall(m.FrameHidden, m, f)
+        -- and out of the D-pad's panels, also while it stays open in a fight: the game looks up the panel of every
+        -- frame an addon makes and asks for its buttons again, which a fight refuses ("Interface action failed")
+        local nav = SmartNavigation
+        if type(nav) == "table" and nav.HandlePanelClose then pcall(nav.HandlePanelClose, nav, f) end
+    end
+    if ok then navIn[f] = want or nil end
+end
+function ns.PadNav(f)
+    if not f or navFrames[f] then return end
+    navFrames[f] = true
+    f:HookScript("OnShow", navSync)
+    f:HookScript("OnHide", navSync)
+    -- once whoever made it is done: a window is made shown, then hidden (the journal) or filled (the share window)
+    C_Timer.After(0, function() navSync(f) end)
+end
+local navWatch = CreateFrame("Frame")
+for _, e in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "ADDON_RESTRICTION_STATE_CHANGED" }) do
+    pcall(navWatch.RegisterEvent, navWatch, e)
+end
+navWatch:SetScript("OnEvent", function(_, event, kind, state)
+    if event == "ADDON_RESTRICTION_STATE_CHANGED" then
+        local E, S = Enum and Enum.AddOnRestrictionType, Enum and Enum.AddOnRestrictionState
+        if not (E and kind == E.Combat) then return end
+        navFight = state ~= (S and S.Inactive or 0)
+    else
+        navFight = event == "PLAYER_REGEN_DISABLED"
+    end
+    for f in pairs(navFrames) do navSync(f) end
+end)
 
 -- Skip: the next line; with nothing playing it closes the speaker window (no mouse needed on a controller)
 _G.ChronicleBinding_Skip = function()
@@ -114,6 +184,17 @@ local DEFAULTS = {
     fishingLines = true, -- casting a fishing line: now and then a short line from the narrator
     rareLines = true,    -- the first kill of a famous rare: the narrator tells its story (only rares with real lore)
     bestiary = true,     -- the first kills of a zone's notable creatures: a note offers what a local knows of them
+    bestiaryAuto = true, -- ...and it plays by itself once the fight is over (navible, Donkeyman)
+    -- the other notes that can play by themselves (Reminder.lua AUTO; the user, 2026-11-15: "yes on by default and off
+    -- like u mentioned"): on where you are idle or asked for it, off where it runs long or would talk over a group
+    zoneIntroAuto = true, levelMilestonesAuto = true,
+    zoneRecapAuto = false, dungeonStoryAuto = false,
+    -- off: the story so far on every flight was more than most want unasked; its note offers it (the user, 2026-11-15:
+    -- "flightpath should also be disabled by default i think. as long as we have options for them its fine")
+    flightStoryAuto = false,
+    -- off: resting by a fire, the camp's buff comes and goes and every return was a new sitting, so one tale followed
+    -- another (the user, 2026-11-15: "campfire tales are telling stories over and over ... dont enable as default")
+    campfireAuto = false,
     levelMilestones = true, -- every 10th level: a word from the narrator and where new stories open up
     muteGameGreetings = true, -- silence the game's own "Greetings"/"Farewell" NPC voices so they don't talk over ours
     questMarkers = false, -- "!" at quest givers with quests for you, "?" where to hand in (off when Questie runs)
@@ -306,6 +387,10 @@ end
 local function settingsOnce(db)
     -- 1.3.0 turned the places' glow on for everyone: it is for those who turn it on (thanks sesshomaru4138)
     if not db.placeGlowOff then db.settings.placeGlow = false; db.placeGlowOff = true end
+    -- the tales by the fire played by themselves for a day in the dev build: off once, ticked again only by hand
+    if not db.campfireAutoOff then db.settings.campfireAuto = false; db.campfireAutoOff = true end
+    -- and so did the story on flights
+    if not db.flightStoryAutoOff then db.settings.flightStoryAuto = false; db.flightStoryAutoOff = true end
 end
 
 local ev = CreateFrame("Frame")

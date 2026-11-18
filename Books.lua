@@ -144,11 +144,30 @@ for _, e in ipairs({ "ITEM_TEXT_READY", "ITEM_TEXT_CLOSED" }) do pcall(ev.Regist
 
 -- The Listen button on the book window. Made the first time a book opens: on newer clients the game only loads
 -- that window then, so at login there was nothing to put it on (books played, but couldn't be played again).
+-- It sits at the bottom right, or where you moved it (shift-drag, as on the quest window). At the top, by the page
+-- number, it covered the book's own Prev button from the second page on (thanks AstroCat).
 function makeButton()
     if btn or not ItemTextFrame then return end
     btn = CreateFrame("Button", nil, ns.Overlay(ItemTextFrame), "UIPanelButtonTemplate")
     btn:SetSize(70, 20); ns.FitButton(btn)
-    btn:SetPoint("TOPLEFT", ItemTextFrame, "TOPLEFT", 64, -30) -- left of the page number: the next-page arrow sits on the right
+    local function place()
+        local pos = ns.settings.bookBtnPos
+        btn:ClearAllPoints()
+        btn:SetPoint("BOTTOMRIGHT", ItemTextFrame, "BOTTOMRIGHT", pos and pos[1] or -40, pos and pos[2] or 12)
+    end
+    place()
+    btn:SetMovable(true); btn:SetClampedToScreen(true)
+    btn:RegisterForDrag("LeftButton")
+    btn:SetScript("OnDragStart", function(self) if IsShiftKeyDown() then self.moving = true; self:StartMoving() end end)
+    btn:SetScript("OnDragStop", function(self)
+        if not self.moving then return end
+        self.moving = nil
+        self:StopMovingOrSizing()
+        local s = self:GetEffectiveScale() / ItemTextFrame:GetEffectiveScale()
+        ns.settings.bookBtnPos = { math.floor(self:GetRight() * s - ItemTextFrame:GetRight() + 0.5),
+            math.floor(self:GetBottom() * s - ItemTextFrame:GetBottom() + 0.5) }
+        place()
+    end)
     btn:SetScript("OnClick", function()
         if current and ns.Voice.PlayingKey() == current then ns.Voice.Stop()
         elseif current then ns.Voice.Play(current) end

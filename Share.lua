@@ -88,6 +88,9 @@ function S.Build(opts)
     -- other client languages record text in that language, which the English voices can't use
     local quests, greetings, books, speech = {}, {}, {}, {}
     if ns.english then
+        -- speech and places a release has voiced by now are let go first, as greetings are (thanks WildflowerWonder)
+        if ns.Speech and ns.Speech.LetGoVoiced then ns.Speech.LetGoVoiced() end
+        if ns.Areas and ns.Areas.LetGoVoiced then ns.Areas.LetGoVoiced() end
         for id, q in pairs(ns.db.quests) do
             local missing = (q.detail and not ns.Voice.Get("q" .. id .. ":detail"))
                 or (q.progress and not ns.Voice.Get("q" .. id .. ":progress"))
@@ -229,6 +232,10 @@ local function getFrame()
     fill(f, function() f:Hide() end)
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", 2, 2)
+    -- hides it itself: the game's own close refuses an addon's window in a fight (Journal.lua); B with a controller
+    close:SetScript("OnClick", function() f:Hide() end)
+    f.CloseButton = close
+    if ns.PadNav then ns.PadNav(f) end -- the D-pad moves through it in WoW: Forever's gamepad mode (Core.lua)
     frame = f
     return f
 end
@@ -290,6 +297,7 @@ local function getNudge()
     later:SetScript("OnClick", function() t:Hide() end)
     local close = CreateFrame("Button", nil, t, "UIPanelCloseButton")
     close:SetSize(24, 24); close:SetPoint("TOPRIGHT", 0, 0)
+    close:SetScript("OnClick", function() t:Hide() end) -- the game's own close refuses it in a fight (Journal.lua)
     t.kind = "shareNudge"
     if ns.Reminder and ns.Reminder.AddOffLink then ns.Reminder.AddOffLink(t) end
     t:SetScript("OnUpdate", function(self)

@@ -6,7 +6,6 @@ local _, ns = ...
 local R = {}
 ns.Rares = R
 
-local pending -- slain while still fighting something else: told when the fight is over
 
 -- "Creature-0-1234-0-12-3056-0000A1B2C3" -> 3056
 local function npcID(guid)
@@ -20,7 +19,8 @@ R.NpcID = npcID
 local function fighting() return InCombatLockdown() or UnitAffectingCombat("player") end
 
 local function tell(key)
-    if fighting() then pending = key; return end
+    -- slain while still fighting something else: told once it is calm (not a paladin's bubble that only drops combat)
+    if not ns.Voice.Calm() then ns.Voice.WhenCalm(function() ns.Voice.Enqueue(key) end) return end
     ns.Voice.Enqueue(key)
 end
 
@@ -74,11 +74,6 @@ local ev = CreateFrame("Frame")
 ev:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_REGEN_ENABLED" then
         checkDead("target")
-        if pending then
-            local key = pending
-            pending = nil
-            C_Timer.After(1, function() ns.Voice.Enqueue(key) end) -- a breath after the fight
-        end
     elseif event == "LOOT_OPENED" then
         onLoot()
         checkDead("target")

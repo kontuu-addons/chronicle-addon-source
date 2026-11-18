@@ -48,6 +48,27 @@ local function here()
     return zone, place
 end
 
+-- a place's line: as the game names the place, or without the possessive it was renamed with
+local function lineOf(zone, place)
+    local key = "area:" .. zone .. ":" .. place
+    if not ns.Voice.Get(key) and place:find("'s ", 1, true) then -- renamed with a possessive, as that one was
+        local plain = "area:" .. zone .. ":" .. (place:gsub("'s ", " "))
+        if ns.Voice.Get(plain) then return plain end
+    end
+    return key
+end
+
+-- places that have a line by now are let go from what /lore share sends (thanks WildflowerWonder)
+ns.Areas = ns.Areas or {}
+function ns.Areas.LetGoVoiced()
+    for zone, places in pairs(ns.db.areas or {}) do
+        for place in pairs(places) do
+            if ns.Voice.Get(lineOf(zone, place)) then places[place] = nil end
+        end
+        if not next(places) then ns.db.areas[zone] = nil end
+    end
+end
+
 local function onArea()
     if not (ns.char and ns.settings) or ns.settings.journalOnly then return end
     -- on a flight the places only pass below: they wait until you go there yourself (thanks tranced93)
@@ -55,11 +76,7 @@ local function onArea()
     local zone, place = here()
     if not (zone and zone ~= "" and place and place ~= "" and place ~= zone) then return end
     place = PLACE_OF[zone .. ":" .. place] or place
-    local key = "area:" .. zone .. ":" .. place
-    if not ns.Voice.Get(key) and place:find("'s ", 1, true) then -- renamed with a possessive, as that one was
-        local plain = "area:" .. zone .. ":" .. (place:gsub("'s ", " "))
-        if ns.Voice.Get(plain) then key = plain end
-    end
+    local key = lineOf(zone, place)
     local seen = ns.char.areaSeen or {}
     ns.char.areaSeen = seen
     local untold = ns.char.areaUntold or {} -- found while someone talked or in a fight: the line still to tell
@@ -80,7 +97,8 @@ local function onArea()
     -- with the place intros off (another addon tells the places, AstroCat), the place goes into Places quietly, to
     -- hear from there
     if not ns.settings.areaIntros then untold[key] = nil return end
-    if InCombatLockdown() or ns.Voice.IsPlaying() or ns.Voice.Paused() then untold[key] = true return end
+    -- in a fight (or one a paladin's bubble only paused): told the next time you pass, once it is calm
+    if not ns.Voice.Calm() or ns.Voice.IsPlaying() or ns.Voice.Paused() then untold[key] = true return end
     untold[key] = nil
     ns.Voice.Play(key)
 end
@@ -91,6 +109,8 @@ table.insert(ns.onLogin, function()
     ev:RegisterEvent("ZONE_CHANGED")
     ev:RegisterEvent("ZONE_CHANGED_INDOORS")
     ev:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-    ev:RegisterEvent("PLAYER_CONTROL_GAINED") -- landing: the place you land in is yours now
     pcall(ev.RegisterEvent, ev, "MINIMAP_ZONE_CHANGED") -- walking into such a building changes only the minimap's name
 end)
+-- landing after a flight: the place you land in is yours now (Travel.lua; not a stun or a fear ending)
+ns.onLanding = ns.onLanding or {}
+table.insert(ns.onLanding, function() C_Timer.After(1.5, function() ns.AfterCutscene(onArea) end) end)

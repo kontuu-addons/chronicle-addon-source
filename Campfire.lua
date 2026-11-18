@@ -106,8 +106,10 @@ end)
 table.insert(ns.onLogin, function()
     ev:RegisterUnitEvent("UNIT_AURA", "player")
     ev:RegisterEvent("PLAYER_REGEN_ENABLED") -- buffs that changed during a fight went unseen: look again after it
-    ev:RegisterEvent("PLAYER_CONTROL_GAINED") -- landing after a flight
 end)
+-- landing after a flight (Travel.lua; not a stun or a fear ending)
+ns.onLanding = ns.onLanding or {}
+table.insert(ns.onLanding, function() local look = ev:GetScript("OnEvent"); if look then look(ev) end end)
 
 -- /sing by a campfire: your own character hums a little, in its voice for your race and gender (a small easter egg).
 -- Anywhere else /sing is left to the game.

@@ -16,7 +16,8 @@ local GREYED = { -- off while "Journal only" is on
     voice = true, recapAfterTurnIn = true, greetings = true, books = true, worldSpeech = true, tongues = true, ghostQuips = true,
     fishingLines = true, rareLines = true, reactions = true, speaker = true, subtitles = true, bigSubtitles = true, skipHeard = true, stopOnClose = true,
     muteGameGreetings = true, ttsFallback = true, checkVoices = true, speakerPlayer = true, questEndsGreeting = true,
-    campfire = true,
+    campfire = true, bestiaryAuto = true, zoneIntroAuto = true, zoneRecapAuto = true, dungeonStoryAuto = true,
+    levelMilestonesAuto = true, flightStoryAuto = true, campfireAuto = true,
 }
 local ON_CHANGE = {
     minimap = function() ns.Minimap.Update() end,
@@ -39,11 +40,12 @@ local MORE = {
     bgVoices = true,
     questEndsGreeting = true, ["Greet me again after"] = true, mixedSure = true, tongues = true, ghostQuips = true,
     reactions = true,
-    fishingLines = true, rareLines = true, bestiary = true,
+    fishingLines = true, rareLines = true, bestiary = true, bestiaryAuto = true,
     lockSpeaker = true, bigSubtitles = true, skipHeard = true, stopOnClose = true, muteGameGreetings = true,
     ttsFallback = true, speakerStays = true,
     chroniclePause = true, zoneRecap = true, dungeonStory = true, logStory = true, tips = true, levelMilestones = true,
-    flightStory = true,
+    flightStory = true, zoneIntroAuto = true, zoneRecapAuto = true, dungeonStoryAuto = true, levelMilestonesAuto = true,
+    flightStoryAuto = true, campfireAuto = true,
     hideUnfound = true, showLeft = true, questTabs = true, newMarker = true,
     questHints = true, questMarkers = true, minimapFree = true,
     shareNudge = true,
@@ -240,7 +242,8 @@ local function build()
     box("ghostQuips", L["A word on the way back"], L["When you run back to your body as a ghost, the narrator now and then says a short line. At most once every 15 minutes."])
     box("fishingLines", L["A word while fishing"], L["When you cast your fishing line, the narrator now and then says a short line. At most once every 15 minutes."])
     box("rareLines", L["Famous rares"], L["The first time you slay a famous rare that has a real story, the narrator tells it once the fight is over."])
-    box("bestiary", L["Bestiary"], L["The first time you slay one of a land's notable creatures (the Burning Blade, kobolds, scorpids...), someone who lives there tells what they know of them, and more as you slay more. A small note offers it once the fight is over. Nothing plays unless you click Listen."])
+    box("bestiary", L["Bestiary"], L["The first time you slay one of a land's notable creatures (the Burning Blade, kobolds, scorpids...), someone who lives there tells what they know of them, and more as you slay more. A small note offers it once the fight is over."])
+    box("bestiaryAuto", L["Play Bestiary entries by themselves"], L["A new Bestiary entry plays by itself once the fight is over, after anyone who is talking. Untick to only get the note, and click Listen to hear it."])
     box("reactions", L["My character reacts"], L["Now and then your own character says a short line after handing in a quest, in a voice for your race and gender."])
 
     section(L["While talking"])
@@ -285,15 +288,21 @@ local function build()
     slider(L["Journal size"], L["Makes the journal window bigger or smaller."], 0.8, 1.3, 0.05,
         function() return ns.settings.journalScale or 1 end, function(v) if ns.Journal.SetScale then ns.Journal.SetScale(v) end end,
         function(v) return math.floor(v * 100 + 0.5) .. "%" end, function() return true end)
-    box("zoneIntro", L["Welcome to new zones"], L["The first time you enter a zone, a short introduction to it. Click Listen to hear the narrator read it."])
+    box("zoneIntro", L["Welcome to new zones"], L["The first time you enter a zone, a short introduction to it, read by the narrator."])
+    box("zoneIntroAuto", L["Play zone welcomes by themselves"], L["A zone's welcome plays by itself the first time you enter it, after anyone who is talking. Untick to only get the note, and click Listen to hear it."])
     box("areaIntros", L["Tell me about new places"], L["The first time you walk into a named place inside a zone, like a village or a ruin, the narrator says a line or two about it. Only when nobody else is talking."])
     box("zoneRecap", L["\"Previously in...\" reminders"], L["After a day or more away, shows how far you are in the zone's story: the chapters under way, and the narrator tells where you left each one."])
-    box("dungeonStory", L["Dungeon stories"], L["Walking into a dungeon or raid, a note offers its story. The first time you beat one of its bosses, the narrator tells who it was, and after the last one how the story ends. Nothing plays unless you click Listen."])
+    box("zoneRecapAuto", L["Play \"Previously in...\" by itself"], L["The story so far plays by itself when the reminder comes up, after anyone who is talking. Off: click Listen on the reminder to hear it."])
+    box("dungeonStory", L["Dungeon stories"], L["Walking into a dungeon or raid, a note offers its story. The first time you beat one of its bosses, the narrator tells who it was, and after the last one how the story ends."])
+    box("dungeonStoryAuto", L["Play dungeon stories by themselves"], L["A dungeon's story plays by itself when you walk in, and who a boss was the first time you beat it, after anyone who is talking. Off: click Listen on the note to hear it."])
     box("logStory", L["The story so far in the quest log"], L["When you select a quest that belongs to a chapter, a small panel beside the quest log shows the chapter, your step and a recap of what happened last. Never anything you have not done yet."])
     box("tips", L["Tips in the journal"], L["A short tip about what Chronicle can do, under a chapter in the journal."])
-    box("levelMilestones", L["Level milestones"], L["Every 10th level, a short word from the narrator and two or three zones where new stories open up for your level. Nothing plays unless you click Listen."])
-    box("flightStory", L["The story on flights"], L["When you take a flight, a small note offers the story so far in the zone you're flying to, or its welcome if you haven't been there. Nothing plays unless you click Listen."])
-    box("campfire", L["By the fire"], L["Near a camp fire, the minimap book glows when the zone has a tale you haven't heard. Sit down, and a note offers the next one: click Listen to hear it."])
+    box("levelMilestones", L["Level milestones"], L["Every 10th level, a short word from the narrator and two or three zones where new stories open up for your level."])
+    box("levelMilestonesAuto", L["Play level milestones by themselves"], L["The narrator's word at every 10th level plays by itself, after anyone who is talking. Untick to only get the note, and click Listen to hear it."])
+    box("flightStory", L["The story on flights"], L["When you take a flight, a small note offers the story so far in the zone you're flying to, or its welcome if you haven't been there."])
+    box("flightStoryAuto", L["Play the story on flights by itself"], L["The story so far in the zone you're flying to plays by itself as you take off, after anyone who is talking. Untick to only get the note, and click Listen to hear it."])
+    box("campfire", L["By the fire"], L["Near a camp fire, the minimap book glows when the zone has a tale you haven't heard. Sit down, and a note offers the next one."])
+    box("campfireAuto", L["Play tales by the fire by themselves"], L["When you sit down by a camp fire, the zone's next tale plays by itself, after anyone who is talking. Untick to only get the note, and click Listen to hear it."])
     box("hideUnfound", L["Hide what I haven't found"], L["No hints at all about what you haven't found yet: no chapters still to discover in the journal or on the map, no road ahead, and no empty places or totals in the Library. Everything you have been through stays."])
     box("showLeft", L["Show what's left"], L["Lists the quests still to do in each chapter by name, level and quest giver, and shows where the chapters you haven't found yet start, in the journal and on the map. It also names the places and creatures you haven't found yet. No story is given away."])
     box("questTabs", L["Side tabs on the quest window"], L["Listen and Recap as tabs on the right side of the quest window, like the journal's, instead of buttons inside it. Handy when other addons put their own buttons there."],

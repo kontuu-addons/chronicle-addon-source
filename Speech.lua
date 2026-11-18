@@ -13,18 +13,38 @@ local function norm(s)
 end
 
 function S.Key(speaker, text)
-    local list = ns.Lore and ns.Lore.speech and ns.Lore.speech[speaker]
-    if not list then return nil end
+    local speech = ns.Lore and ns.Lore.speech
+    if not speech then return nil end
     local shown = norm(text)
-    for _, item in ipairs(list) do
-        -- a line in a language you don't know plays only with that option on (Voice.Tongue)
-        if shown:find(" " .. item[2] .. " ", 1, true) then return ns.Voice.Tongue(item[1]) end
+    local function find(list)
+        for _, item in ipairs(list or {}) do
+            -- a line in a language you don't know plays only with that option on (Voice.Tongue)
+            if shown:find(" " .. item[2] .. " ", 1, true) then return ns.Voice.Tongue(item[1]) end
+        end
+    end
+    -- a warlock's imp has a random name of its own: its lines are found by their words, whatever it is called (only
+    -- imps of a name someone had shared spoke; thanks Donkeyman)
+    return find(speech[speaker]) or find(speech["*pet"])
+end
+
+-- what a release has voiced by now is let go: /lore share sends only what still waits, not the same lines every time,
+-- and the limit below counts only the speakers still waiting (thanks WildflowerWonder)
+function S.LetGoVoiced()
+    for speaker, r in pairs(ns.db.speech or {}) do
+        local left = {}
+        for _, t in ipairs(type(r) == "table" and r.texts or {}) do
+            local key = S.Key(speaker, t)
+            if not (key and ns.Voice.Get(key)) then left[#left + 1] = t end
+        end
+        if #left == 0 then ns.db.speech[speaker] = nil else r.texts = left end
     end
 end
 
+local letGo = false
 local function record(speaker, text)
     if not ns.english then return end -- other languages can't be voiced, and Share never sends them: don't fill the saved data
     ns.db.speech = ns.db.speech or {}
+    if not letGo then letGo = true; S.LetGoVoiced() end -- once a session
     if not ns.db.speech[speaker] then
         local n = 0
         for _ in pairs(ns.db.speech) do n = n + 1 end

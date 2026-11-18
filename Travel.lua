@@ -98,10 +98,25 @@ local function onFishing()
     ns.Voice.Play("fish:" .. i)
 end
 
+-- Landing after a flight: control back after the taxi (ns.onLanding: the zone's notes, its places, a camp fire). Control
+-- comes back after a stun or a fear too, and a paladin bubbling out of one counted as landing: the zone's notes and
+-- the places came in the middle of the fight (the user, 2026-11-15: "it also seem to tell zone/dungeon story when i
+-- bubble as paladin")
+ns.onLanding = ns.onLanding or {}
+local flying = false
+
 local ev = CreateFrame("Frame")
 ev:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_CONTROL_LOST" then
-        C_Timer.After(1.5, onFlight) -- UnitOnTaxi turns true a moment after take-off
+        C_Timer.After(1.5, function() -- UnitOnTaxi turns true a moment after take-off
+            if UnitOnTaxi("player") then flying = true end
+            onFlight()
+        end)
+    elseif event == "PLAYER_CONTROL_GAINED" then
+        if flying then
+            flying = false
+            for _, fn in ipairs(ns.onLanding) do fn() end
+        end
     elseif event == "PLAYER_ALIVE" then
         C_Timer.After(8, onGhost) -- fires when you release your spirit; a few seconds in, once you are on your way back
     elseif event == "UNIT_SPELLCAST_CHANNEL_START" then
@@ -111,6 +126,7 @@ ev:SetScript("OnEvent", function(_, event, ...)
 end)
 table.insert(ns.onLogin, function()
     ev:RegisterEvent("PLAYER_CONTROL_LOST")
+    ev:RegisterEvent("PLAYER_CONTROL_GAINED")
     ev:RegisterEvent("PLAYER_ALIVE")
     if ev.RegisterUnitEvent then
         pcall(ev.RegisterUnitEvent, ev, "UNIT_SPELLCAST_CHANNEL_START", "player")
