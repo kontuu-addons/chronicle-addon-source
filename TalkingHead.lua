@@ -688,7 +688,7 @@ function T.UpdateMarks()
     else f.count:SetPoint("RIGHT", f.player, "RIGHT", 0, 0) end
 end
 
-local function showModel(who)
+local function showModel(who, key)
     local info = npcInfo(who)
     local m = f.model
     pcall(m.ClearModel, m)
@@ -700,6 +700,10 @@ local function showModel(who)
     end
     if not ok and info and info.d then ok = pcall(m.SetDisplayInfo, m, info.d) end
     if not ok and info and info.id then ok = pcall(m.SetCreature, m, info.id) end
+    -- someone who only greets you is in no list of ours (WoW: Forever's own people): their greeting's key names their
+    -- creature, so a greeting played again after the talk still has their face (thanks Donkeyman: Angus Hammerhand)
+    local creature = tonumber(key and (key:match("^gos:(%d+)") or key:match("^qg:(%d+)")) or "")
+    if not ok and creature then ok = pcall(m.SetCreature, m, creature) end
     if ok then
         pcall(m.SetPortraitZoom, m, 0.9)
         pcall(m.SetCamDistanceScale, m, 1)
@@ -759,7 +763,7 @@ function setHead(who, key, compact)
         if info and info.r then bits[#bits + 1] = info.r end
         f.title:SetText(table.concat(bits, "  "))
     else
-        local info = showModel(who)
+        local info = showModel(who, key)
         local bits = {}
         if info and info.t then bits[#bits + 1] = "<" .. info.t .. ">" end
         if info and info.r then bits[#bits + 1] = info.r end

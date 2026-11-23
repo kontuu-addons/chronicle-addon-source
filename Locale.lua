@@ -91,6 +91,65 @@ function ns.Date(t)
     return date(LOCALE == "deDE" and "%d.%m.%Y" or "%d/%m/%Y", t)
 end
 
+-- ---------------------------------------------------------------- the story texts in the player's language
+-- Recaps, chapters, bios, the Bestiary and the rest in Spanish, French or German come in an addon of their own per
+-- language (ForeverChronicle_esES, _frFR, _deDE), loaded only on that client; Latin American Spanish takes the Spanish
+-- one (thanks david for asking). Its texts are laid over the English ones they translate, which stay wherever nothing
+-- is translated yet. Keys (zones, ids, names) never change: only the texts shown.
+local LANGUAGE = { esES = "esES", esMX = "esES", frFR = "frFR", deDE = "deDE" }
+
+function ns.LoadLanguage()
+    local lang = LANGUAGE[LOCALE]
+    if not lang or ns.language then return end
+    local load = (C_AddOns and C_AddOns.LoadAddOn) or LoadAddOn
+    if load then pcall(load, "ForeverChronicle_" .. lang) end
+end
+
+-- one table's texts over the English: only keys the English has, text for text, and only the given fields
+local function over(dst, src, fields)
+    if type(dst) ~= "table" or type(src) ~= "table" then return end
+    for k, v in pairs(src) do
+        if type(v) == "string" and type(dst[k]) == "string" and (not fields or fields[k]) then dst[k] = v end
+    end
+end
+local TEXTS, RARE, CHARACTER = { title = true, intro = true, text = true }, { name = true, text = true }, { t = true, b = true }
+
+function ns.ApplyLanguage(locale, t)
+    local lore = ns.Lore
+    if LANGUAGE[LOCALE] ~= locale or type(lore) ~= "table" or type(t) ~= "table" then return false end
+    for _, key in ipairs({ "zoneIntro", "epilogue", "history", "campfire", "dungeonIntro", "levels", "ghost", "fishing",
+                           "titles" }) do
+        over(lore[key], t[key])
+    end
+    for key, list in pairs(t.campfireMore or {}) do over((lore.campfireMore or {})[key], list) end
+    for key, ends in pairs(t.dungeonEnd or {}) do over((lore.dungeonEnd or {})[key], ends) end
+    for id, s in pairs(t.quests or {}) do
+        local q = lore.quests and lore.quests[id]
+        if q and type(q.summary) == "string" and type(s) == "string" then q.summary = s end
+    end
+    for _, name in ipairs({ "arcs", "legends", "peoples" }) do
+        local src = t[name]
+        for _, e in ipairs(src and lore[name] or {}) do over(e, src[e.id], TEXTS) end
+    end
+    for name, e in pairs(t.npcs or {}) do over((lore.npcs or {})[name], e, CHARACTER) end
+    if type(t.races) == "table" then
+        for _, e in pairs(lore.npcs or {}) do
+            if type(e) == "table" and e.r and t.races[e.r] then e.r = t.races[e.r] end
+        end
+    end
+    for id, r in pairs(t.rares or {}) do over((lore.rares or {})[id], r, RARE) end
+    local groups = lore.bestiary and lore.bestiary.groups
+    for id, g in pairs(t.bestiary or {}) do
+        local dst = groups and groups[id]
+        if type(dst) == "table" and type(g) == "table" then
+            over(dst, g, { name = true })
+            over(dst.text, g.text)
+        end
+    end
+    ns.language = locale
+    return true
+end
+
 -- Buttons are sized for the English labels; in other languages they grow to fit their text.
 function ns.FitButton(b)
     if ENGLISH or not b then return b end

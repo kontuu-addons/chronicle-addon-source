@@ -285,6 +285,8 @@ end
 local api = LibStub:NewLibrary("Chronicle-1.0", 1)
 if api then
     function api:RegisterPack(folder, lines) registerPack(folder, lines) end
+    -- the story texts in the player's language (ForeverChronicle_esES ...; Locale.lua)
+    function api:RegisterLanguage(locale, texts) return ns.ApplyLanguage(locale, texts) end
 end
 -- Voice packs from before 1.0.0-beta.7 call this global instead. It goes once everyone has the new packs.
 _G.ChronicleRegisterPack = registerPack
@@ -447,6 +449,7 @@ ev:SetScript("OnEvent", function(_, event, arg)
         end
 
         ns.db, ns.char, ns.settings = db, c, db.settings
+        ns.LoadLanguage() -- the story texts in Spanish, French or German, on those clients
     elseif event == "PLAYER_LOGIN" then
         local name = ns.clean(UnitName("player"))
         if name then ns.db.chars[name] = true end
@@ -506,7 +509,8 @@ ev:SetScript("OnEvent", function(_, event, arg)
             ns.settings.reactions = false
         end
 
-        -- the voices and the story texts are English: on other clients Chronicle starts as a journal only, once
+        -- the voices are English (the story texts come in some languages, Locale.lua): on other clients Chronicle
+        -- starts as a journal only, once
         if not ns.english and not ns.journalEdition and not ns.db.localeDefaults then
             ns.db.localeDefaults = true
             ns.settings.journalOnly = true
@@ -724,6 +728,10 @@ SlashCmdList.CHRONICLE = function(msg)
         if not ok then ns.pr("campdebug failed: " .. tostring(err)) end
     elseif cmd == "stop" then
         ns.Voice.Stop()
+    elseif cmd == "mute" then
+        ns.Speech.MuteCommand((msg or ""):match("^%S+%s+(.+)$"))
+    elseif cmd == "unmute" then
+        ns.Speech.UnmuteCommand((msg or ""):match("^%S+%s+(.+)$"))
     elseif cmd == "library" and (msg or ""):lower():find("preview", 1, true) then
         ns.pr(ns.Journal.LibraryPreview() and "library preview on: about a third of the books shown as found (nothing is saved). /lore library preview again turns it off."
             or "library preview off.")
@@ -783,6 +791,8 @@ SlashCmdList.CHRONICLE = function(msg)
     else
         ns.pr(L["/lore  open the journal"])
         ns.pr(L["/lore stop  stop talking"])
+        ns.pr(L["/lore mute [name]  silence the NPC who just talked in the world (or the one named)"])
+        ns.pr(L["/lore unmute [name]  hear them again (everyone, without a name)"])
         ns.pr(L["/lore share  send in quests that have no voiceover yet"])
         ns.pr(L["/lore report [what's wrong]  flag the last line (a name said wrong, a bad voice)"])
         ns.pr(L["/lore checks  how many voice lines you have checked here"])
