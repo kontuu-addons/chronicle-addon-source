@@ -237,6 +237,40 @@ local function build()
         function() return ns.settings.greetings and not ns.settings.journalOnly end)
     box("books", L["Read books and letters"], L["The narrator reads the page you open. Turning the page reads the next one."])
     box("worldSpeech", L["NPCs talking in the world"], L["Speech bubbles and yells, like guards, villains and mobs. Only when nothing else is talking, and not the same line twice within two minutes."])
+    -- the NPCs muted from their portrait's menu or with /lore mute, and a way to hear them all again (thanks Hedge)
+    do
+        local r = newRow(30)
+        local caption = r:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        caption:SetPoint("LEFT", 14, 0)
+        local b = CreateFrame("Button", nil, r, "UIPanelButtonTemplate")
+        b:SetSize(120, 22); b:SetPoint("RIGHT", r, "RIGHT", -70, 0)
+        b:SetText(L["Unmute all"]); ns.FitButton(b)
+        b:SetScript("OnClick", function()
+            ns.Speech.UnmuteAll()
+            O.Refresh()
+        end)
+        -- the tooltip says how to mute, so it shows on the button while there is nobody to unmute too
+        if b.SetMotionScriptsWhileDisabled then b:SetMotionScriptsWhileDisabled(true) end
+        b:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(L["Muted NPCs"], 1, 1, 1)
+            GameTooltip:AddLine(L["To silence one NPC, right-click their portrait and choose Mute voice, or type /lore mute right after they talk. What they say in the world stays silent; their quests and greetings still play."], nil, nil, nil, true)
+            local names = ns.Speech.MutedNames()
+            if #names > 0 then
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine(table.concat(names, ", "), 1, 0.82, 0, true)
+            end
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        widgets[#widgets + 1] = function()
+            local n = #ns.Speech.MutedNames()
+            caption:SetText(("%s: %d"):format(L["Muted NPCs"], n))
+            b:SetEnabled(n > 0)
+            local c = (voicesOn() and ns.settings.worldSpeech) and 1 or 0.5
+            caption:SetTextColor(c, c, c)
+        end
+    end
     box("mixedSure", L["Quiet when unsure of man or woman"], L["Some enemies come as both men and women, like Defias and Twilight Thugs. When the addon can't see which one is talking (often in a fight), it picks a voice. Tick to stay quiet instead. Enemy nameplates help it see them."])
     box("tongues", L["Languages you don't know"], L["NPCs who speak a language your character doesn't know, like the Scarlet Crusade to the Horde or Blackrock orcs to the Alliance, stay silent. Tick to hear them say the scrambled words the game shows."])
     box("ghostQuips", L["A word on the way back"], L["When you run back to your body as a ghost, the narrator now and then says a short line. At most once every 15 minutes."])
